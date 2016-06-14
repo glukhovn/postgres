@@ -964,6 +964,25 @@ ReadBuffer_common(SMgrRelation smgr, char relpersistence, ForkNumber forkNum,
 	return BufferDescriptorGetBuffer(bufHdr);
 }
 
+Buffer
+ReadNewBufferWithExtensionLock(Relation index, int lockMode)
+{
+	Buffer buffer;
+	/* Must extend the file */
+	bool needLock = !RELATION_IS_LOCAL(index);
+
+	if (needLock)
+		LockRelationForExtension(index, ExclusiveLock);
+
+	buffer = ReadBuffer(index, P_NEW);
+	LockBuffer(buffer, lockMode);
+
+	if (needLock)
+		UnlockRelationForExtension(index, ExclusiveLock);
+
+	return buffer;
+}
+
 /*
  * BufferAlloc -- subroutine for ReadBuffer.  Handles lookup of a shared
  *		buffer.  If no buffer exists already, selects a replacement

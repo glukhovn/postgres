@@ -579,7 +579,6 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 	}
 	else
 	{
-		bool		needLock;
 		Page		page;
 
 		Assert(access == BT_WRITE);
@@ -654,15 +653,8 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 		 * page.  We can skip locking for new or temp relations, however,
 		 * since no one else could be accessing them.
 		 */
-		needLock = !RELATION_IS_LOCAL(rel);
 
-		if (needLock)
-			LockRelationForExtension(rel, ExclusiveLock);
-
-		buf = ReadBuffer(rel, P_NEW);
-
-		/* Acquire buffer lock on new page */
-		LockBuffer(buf, BT_WRITE);
+		buf = ReadNewBufferWithExtensionLock(rel, BT_WRITE);
 
 		/*
 		 * Release the file-extension lock; it's now OK for someone else to
@@ -670,8 +662,6 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 		 * lock before we have buffer lock on the new page, or we risk a race
 		 * condition against btvacuumscan --- see comments therein.
 		 */
-		if (needLock)
-			UnlockRelationForExtension(rel, ExclusiveLock);
 
 		/* Initialize the new page before returning it */
 		page = BufferGetPage(buf);

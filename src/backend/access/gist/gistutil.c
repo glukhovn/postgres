@@ -758,7 +758,6 @@ Buffer
 gistNewBuffer(Relation r)
 {
 	Buffer		buffer;
-	bool		needLock;
 
 	/* First, try to get a page from FSM */
 	for (;;)
@@ -794,18 +793,7 @@ gistNewBuffer(Relation r)
 	}
 
 	/* Must extend the file */
-	needLock = !RELATION_IS_LOCAL(r);
-
-	if (needLock)
-		LockRelationForExtension(r, ExclusiveLock);
-
-	buffer = ReadBuffer(r, P_NEW);
-	LockBuffer(buffer, GIST_EXCLUSIVE);
-
-	if (needLock)
-		UnlockRelationForExtension(r, ExclusiveLock);
-
-	return buffer;
+	return ReadNewBufferWithExtensionLock(r, GIST_EXCLUSIVE);
 }
 
 bytea *

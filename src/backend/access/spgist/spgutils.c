@@ -181,7 +181,6 @@ Buffer
 SpGistNewBuffer(Relation index)
 {
 	Buffer		buffer;
-	bool		needLock;
 
 	/* First, try to get a page from FSM */
 	for (;;)
@@ -222,17 +221,7 @@ SpGistNewBuffer(Relation index)
 	}
 
 	/* Must extend the file */
-	needLock = !RELATION_IS_LOCAL(index);
-	if (needLock)
-		LockRelationForExtension(index, ExclusiveLock);
-
-	buffer = ReadBuffer(index, P_NEW);
-	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-
-	if (needLock)
-		UnlockRelationForExtension(index, ExclusiveLock);
-
-	return buffer;
+	return ReadNewBufferWithExtensionLock(index, BUFFER_LOCK_EXCLUSIVE);
 }
 
 /*
