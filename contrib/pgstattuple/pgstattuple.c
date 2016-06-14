@@ -481,9 +481,7 @@ pgstat_index(Relation rel, BlockNumber start, pgstat_page pagefn,
 	for (;;)
 	{
 		/* Get the current relation length */
-		LockRelationForExtension(rel, ExclusiveLock);
-		nblocks = RelationGetNumberOfBlocks(rel);
-		UnlockRelationForExtension(rel, ExclusiveLock);
+		nblocks = RelationGetNumberOfBlocksLocked(rel);
 
 		/* Quit if we've scanned the whole relation */
 		if (blkno >= nblocks)

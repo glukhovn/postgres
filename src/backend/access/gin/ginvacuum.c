@@ -642,7 +642,6 @@ IndexBulkDeleteResult *
 ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 {
 	Relation	index = info->index;
-	bool		needLock;
 	BlockNumber npages,
 				blkno;
 	BlockNumber totFreePages;
@@ -685,16 +684,7 @@ ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	stats->num_index_tuples = info->num_heap_tuples;
 	stats->estimated_count = info->estimated_count;
 
-	/*
-	 * Need lock unless it's local to this backend.
-	 */
-	needLock = !RELATION_IS_LOCAL(index);
-
-	if (needLock)
-		LockRelationForExtension(index, ExclusiveLock);
-	npages = RelationGetNumberOfBlocks(index);
-	if (needLock)
-		UnlockRelationForExtension(index, ExclusiveLock);
+	npages = RelationGetNumberOfBlocksLocked(index);
 
 	totFreePages = 0;
 
@@ -739,12 +729,7 @@ ginvacuumcleanup(IndexVacuumInfo *info, IndexBulkDeleteResult *stats)
 	IndexFreeSpaceMapVacuum(info->index);
 
 	stats->pages_free = totFreePages;
-
-	if (needLock)
-		LockRelationForExtension(index, ExclusiveLock);
-	stats->num_pages = RelationGetNumberOfBlocks(index);
-	if (needLock)
-		UnlockRelationForExtension(index, ExclusiveLock);
+	stats->num_pages = RelationGetNumberOfBlocksLocked(index);
 
 	return stats;
 }

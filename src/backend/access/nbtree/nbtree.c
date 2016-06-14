@@ -739,7 +739,6 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	BTVacState	vstate;
 	BlockNumber num_pages;
 	BlockNumber blkno;
-	bool		needLock;
 
 	/*
 	 * Reset counts that will be incremented during the scan; needed in case
@@ -789,17 +788,12 @@ btvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	 * We can skip locking for new or temp relations, however, since no one
 	 * else could be accessing them.
 	 */
-	needLock = !RELATION_IS_LOCAL(rel);
 
 	blkno = BTREE_METAPAGE + 1;
 	for (;;)
 	{
 		/* Get the current relation length */
-		if (needLock)
-			LockRelationForExtension(rel, ExclusiveLock);
-		num_pages = RelationGetNumberOfBlocks(rel);
-		if (needLock)
-			UnlockRelationForExtension(rel, ExclusiveLock);
+		num_pages = RelationGetNumberOfBlocksLocked(rel);
 
 		/* Quit if we've scanned the whole relation */
 		if (blkno >= num_pages)

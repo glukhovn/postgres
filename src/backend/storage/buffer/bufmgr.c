@@ -2776,6 +2776,26 @@ RelationGetNumberOfBlocksInFork(Relation relation, ForkNumber forkNum)
 	return smgrnblocks(relation->rd_smgr, forkNum);
 }
 
+BlockNumber
+RelationGetNumberOfBlocksLocked(Relation relation)
+{
+	BlockNumber npages;
+	/*
+	 * Need lock unless it's local to this backend.
+	 */
+	bool needLock = !RELATION_IS_LOCAL(relation);
+
+	if (needLock)
+		LockRelationForExtension(relation, ExclusiveLock);
+
+	npages = RelationGetNumberOfBlocks(relation);
+
+	if (needLock)
+		UnlockRelationForExtension(relation, ExclusiveLock);
+
+	return npages;
+}
+
 /*
  * BufferIsPermanent
  *		Determines whether a buffer will potentially still be around after

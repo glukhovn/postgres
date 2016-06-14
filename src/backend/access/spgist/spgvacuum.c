@@ -789,7 +789,6 @@ static void
 spgvacuumscan(spgBulkDeleteState *bds)
 {
 	Relation	index = bds->info->index;
-	bool		needLock;
 	BlockNumber num_pages,
 				blkno;
 
@@ -807,9 +806,6 @@ spgvacuumscan(spgBulkDeleteState *bds)
 	bds->stats->num_index_tuples = 0;
 	bds->stats->pages_deleted = 0;
 
-	/* We can skip locking for new or temp relations */
-	needLock = !RELATION_IS_LOCAL(index);
-
 	/*
 	 * The outer loop iterates over all index pages except the metapage, in
 	 * physical order (we hope the kernel will cooperate in providing
@@ -822,11 +818,7 @@ spgvacuumscan(spgBulkDeleteState *bds)
 	for (;;)
 	{
 		/* Get the current relation length */
-		if (needLock)
-			LockRelationForExtension(index, ExclusiveLock);
-		num_pages = RelationGetNumberOfBlocks(index);
-		if (needLock)
-			UnlockRelationForExtension(index, ExclusiveLock);
+		num_pages = RelationGetNumberOfBlocksLocked(index);
 
 		/* Quit if we've scanned the whole relation */
 		if (blkno >= num_pages)
