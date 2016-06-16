@@ -127,6 +127,7 @@ typedef struct
 	/* These are the values the cost estimator must return to the planner */
 	Cost		indexStartupCost;		/* index-related startup cost */
 	Cost		indexTotalCost; /* total index-related scan cost */
+	Cost		indexSeqTotalCost;
 	Selectivity indexSelectivity;		/* selectivity of index */
 	double		indexCorrelation;		/* order correlation of index */
 

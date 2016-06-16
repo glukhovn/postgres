@@ -481,6 +481,7 @@ _copyBitmapIndexScan(const BitmapIndexScan *from)
 	COPY_SCALAR_FIELD(indexid);
 	COPY_NODE_FIELD(indexqual);
 	COPY_NODE_FIELD(indexqualorig);
+	COPY_SCALAR_FIELD(sequential);
 
 	return newnode;
 }

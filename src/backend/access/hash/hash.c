@@ -64,6 +64,7 @@ hashhandler(PG_FUNCTION_ARGS)
 	amroutine->amstorage = false;
 	amroutine->amclusterable = false;
 	amroutine->ampredlocks = false;
+	amroutine->amcanseqscan = false;
 	amroutine->amkeytype = INT4OID;
 
 	amroutine->ambuild = hashbuild;
@@ -397,7 +398,7 @@ hashgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
  *	hashbeginscan() -- start a scan on a hash index
  */
 IndexScanDesc
-hashbeginscan(Relation rel, int nkeys, int norderbys)
+hashbeginscan(Relation rel, int nkeys, int norderbys, bool sequential)
 {
 	IndexScanDesc scan;
 	HashScanOpaque so;

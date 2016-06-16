@@ -66,7 +66,8 @@ typedef void (*amcostestimate_function) (struct PlannerInfo *root,
 													 Cost *indexStartupCost,
 													 Cost *indexTotalCost,
 											   Selectivity *indexSelectivity,
-												   double *indexCorrelation);
+												   double *indexCorrelation,
+													 Cost *indexSeqTotalCost);
 
 /* parse index reloptions */
 typedef bytea *(*amoptions_function) (Datum reloptions,
@@ -78,7 +79,8 @@ typedef bool (*amvalidate_function) (Oid opclassoid);
 /* prepare for index scan */
 typedef IndexScanDesc (*ambeginscan_function) (Relation indexRelation,
 														   int nkeys,
-														   int norderbys);
+														   int norderbys,
+														   bool sequential);
 
 /* (re)start index scan */
 typedef void (*amrescan_function) (IndexScanDesc scan,
@@ -142,6 +144,8 @@ typedef struct IndexAmRoutine
 	bool		amclusterable;
 	/* does AM handle predicate locks? */
 	bool		ampredlocks;
+	/* does AM support sequential bitmap scan? */
+	bool		amcanseqscan;
 	/* type of data stored in index, or InvalidOid if variable */
 	Oid			amkeytype;
 

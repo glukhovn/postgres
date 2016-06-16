@@ -92,6 +92,7 @@ brinhandler(PG_FUNCTION_ARGS)
 	amroutine->amstorage = true;
 	amroutine->amclusterable = false;
 	amroutine->ampredlocks = false;
+	amroutine->amcanseqscan = false;
 	amroutine->amkeytype = InvalidOid;
 
 	amroutine->ambuild = brinbuild;
@@ -276,7 +277,7 @@ brininsert(Relation idxRel, Datum *values, bool *nulls,
  * holding lock on index, it's not necessary to recompute it during brinrescan.
  */
 IndexScanDesc
-brinbeginscan(Relation r, int nkeys, int norderbys)
+brinbeginscan(Relation r, int nkeys, int norderbys, bool sequential)
 {
 	IndexScanDesc scan;
 	BrinOpaque *opaque;

@@ -318,9 +318,19 @@ gistindex_keytest(IndexScanDesc scan,
  * in the parent, we push its new right sibling onto the queue so the
  * sibling will be processed next.
  */
-static void
-gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
-			 TIDBitmap *tbm, int64 *ntids)
+
+#define gistScanPage(scan, pageItem, myDistances, tbm, ntids) \
+	((void) gistScanPageEx(scan, pageItem, myDistances, tbm, ntids, \
+						   NULL, false))
+
+static BlockNumber
+gistScanPageEx(IndexScanDesc scan,
+			   GISTSearchItem *pageItem,
+			   double *myDistances,
+			   TIDBitmap *tbm,
+			   int64 *ntids,
+			   BufferAccessStrategy strategy,
+			   bool seqScan)
 {
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 	GISTSTATE  *giststate = so->giststate;
@@ -331,14 +341,21 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 	OffsetNumber maxoff;
 	OffsetNumber i;
 	MemoryContext oldcxt;
+	BlockNumber	rightLink = InvalidBlockNumber;
 
 	Assert(!GISTSearchItemIsHeap(*pageItem));
 
-	buffer = ReadBuffer(scan->indexRelation, pageItem->blkno);
+	buffer = ReadBufferExtended(scan->indexRelation, MAIN_FORKNUM,
+								pageItem->blkno, RBM_NORMAL, strategy);
 	LockBuffer(buffer, GIST_SHARE);
-	gistcheckpage(scan->indexRelation, buffer);
 	page = BufferGetPage(buffer);
 	TestForOldSnapshot(scan->xs_snapshot, r, page);
+
+	if (seqScan &&
+		(PageIsNew(page) || GistPageIsDeleted(page) || !GistPageIsLeaf(page)))
+		goto out;
+
+	gistcheckpage(scan->indexRelation, buffer);
 	opaque = GistPageGetOpaque(page);
 
 	/*
@@ -352,26 +369,31 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 		 pageItem->data.parentlsn < GistPageGetNSN(page)) &&
 		opaque->rightlink != InvalidBlockNumber /* sanity check */ )
 	{
-		/* There was a page split, follow right link to add pages */
-		GISTSearchItem *item;
+		if (seqScan)
+			rightLink = opaque->rightlink;
+		else
+		{
+			/* There was a page split, follow right link to add pages */
+			GISTSearchItem *item;
 
-		/* This can't happen when starting at the root */
-		Assert(myDistances != NULL);
+			/* This can't happen when starting at the root */
+			Assert(myDistances != NULL);
 
-		oldcxt = MemoryContextSwitchTo(so->queueCxt);
+			oldcxt = MemoryContextSwitchTo(so->queueCxt);
 
-		/* Create new GISTSearchItem for the right sibling index page */
-		item = palloc(SizeOfGISTSearchItem(scan->numberOfOrderBys));
-		item->blkno = opaque->rightlink;
-		item->data.parentlsn = pageItem->data.parentlsn;
+			/* Create new GISTSearchItem for the right sibling index page */
+			item = palloc(SizeOfGISTSearchItem(scan->numberOfOrderBys));
+			item->blkno = opaque->rightlink;
+			item->data.parentlsn = pageItem->data.parentlsn;
 
-		/* Insert it into the queue using same distances as for this page */
-		memcpy(item->distances, myDistances,
-			   sizeof(double) * scan->numberOfOrderBys);
+			/* Insert it into the queue using same distances as for this page */
+			memcpy(item->distances, myDistances,
+				   sizeof(double) * scan->numberOfOrderBys);
 
-		pairingheap_add(so->queue, &item->phNode);
+			pairingheap_add(so->queue, &item->phNode);
 
-		MemoryContextSwitchTo(oldcxt);
+			MemoryContextSwitchTo(oldcxt);
+		}
 	}
 
 	so->nPageData = so->curPageData = 0;
@@ -503,7 +525,10 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem, double *myDistances,
 		}
 	}
 
+out:
 	UnlockReleaseBuffer(buffer);
+
+	return rightLink;
 }
 
 /*
@@ -748,6 +773,39 @@ gistgettuple(IndexScanDesc scan, ScanDirection dir)
 	}
 }
 
+static int64
+gistGetBitmapSequential(IndexScanDesc scan, TIDBitmap *tbm)
+{
+	GISTSearchItem	item = { 0 };
+	Relation		rel = scan->indexRelation;
+	BlockNumber		blkno;
+	BlockNumber		npages;
+	int64			ntids = 0;
+	BufferAccessStrategy strategy = GetAccessStrategy(BAS_BULKREAD);
+
+	item.data.parentlsn = RelationNeedsWAL(rel) ? GetXLogInsertRecPtr()
+												: gistGetFakeLSN(rel);
+
+	for (blkno = GIST_ROOT_BLKNO;
+		 blkno < (npages = RelationGetNumberOfBlocksLocked(rel));)
+	{
+		for (; blkno < npages; blkno++)
+		{
+			item.blkno = blkno;
+
+			do
+			{
+				item.blkno = gistScanPageEx(scan, &item, NULL, tbm, &ntids,
+											strategy, true);
+				CHECK_FOR_INTERRUPTS();
+			}
+			while (item.blkno != InvalidBlockNumber && item.blkno < blkno);
+		}
+	}
+
+	return ntids;
+}
+
 /*
  * gistgetbitmap() -- Get a bitmap of all heap tuple locations
  */
@@ -767,6 +825,9 @@ gistgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 	so->curPageData = so->nPageData = 0;
 	if (so->pageDataCxt)
 		MemoryContextReset(so->pageDataCxt);
+
+	if (so->sequential)
+		PG_RETURN_INT64(gistGetBitmapSequential(scan, tbm));
 
 	fakeItem.blkno = GIST_ROOT_BLKNO;
 	memset(&fakeItem.data.parentlsn, 0, sizeof(GistNSN));

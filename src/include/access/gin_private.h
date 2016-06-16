@@ -870,7 +870,7 @@ typedef struct GinScanOpaqueData
 
 typedef GinScanOpaqueData *GinScanOpaque;
 
-extern IndexScanDesc ginbeginscan(Relation rel, int nkeys, int norderbys);
+extern IndexScanDesc ginbeginscan(Relation rel, int nkeys, int norderbys, bool sequential);
 extern void ginendscan(IndexScanDesc scan);
 extern void ginrescan(IndexScanDesc scan, ScanKey key, int nscankeys,
 		  ScanKey orderbys, int norderbys);

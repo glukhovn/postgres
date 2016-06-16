@@ -90,7 +90,7 @@ extern void brinbuildempty(Relation index);
 extern bool brininsert(Relation idxRel, Datum *values, bool *nulls,
 		   ItemPointer heaptid, Relation heapRel,
 		   IndexUniqueCheck checkUnique);
-extern IndexScanDesc brinbeginscan(Relation r, int nkeys, int norderbys);
+extern IndexScanDesc brinbeginscan(Relation r, int nkeys, int norderbys, bool sequential);
 extern int64 bringetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
 extern void brinrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 		   ScanKey orderbys, int norderbys);

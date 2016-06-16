@@ -661,7 +661,7 @@ extern void btbuildempty(Relation index);
 extern bool btinsert(Relation rel, Datum *values, bool *isnull,
 		 ItemPointer ht_ctid, Relation heapRel,
 		 IndexUniqueCheck checkUnique);
-extern IndexScanDesc btbeginscan(Relation rel, int nkeys, int norderbys);
+extern IndexScanDesc btbeginscan(Relation rel, int nkeys, int norderbys, bool sequential);
 extern bool btgettuple(IndexScanDesc scan, ScanDirection dir);
 extern int64 btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
 extern void btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,

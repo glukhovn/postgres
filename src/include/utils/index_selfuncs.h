@@ -28,41 +28,47 @@ extern void brincostestimate(struct PlannerInfo *root,
 				 Cost *indexStartupCost,
 				 Cost *indexTotalCost,
 				 Selectivity *indexSelectivity,
-				 double *indexCorrelation);
+				 double *indexCorrelation,
+				 Cost *indexSeqTotalCost);
 extern void btcostestimate(struct PlannerInfo *root,
 			   struct IndexPath *path,
 			   double loop_count,
 			   Cost *indexStartupCost,
 			   Cost *indexTotalCost,
 			   Selectivity *indexSelectivity,
-			   double *indexCorrelation);
+			   double *indexCorrelation,
+			   Cost *indexSeqTotalCost);
 extern void hashcostestimate(struct PlannerInfo *root,
 				 struct IndexPath *path,
 				 double loop_count,
 				 Cost *indexStartupCost,
 				 Cost *indexTotalCost,
 				 Selectivity *indexSelectivity,
-				 double *indexCorrelation);
+				 double *indexCorrelation,
+				 Cost *indexSeqTotalCost);
 extern void gistcostestimate(struct PlannerInfo *root,
 				 struct IndexPath *path,
 				 double loop_count,
 				 Cost *indexStartupCost,
 				 Cost *indexTotalCost,
 				 Selectivity *indexSelectivity,
-				 double *indexCorrelation);
+				 double *indexCorrelation,
+				 Cost *indexSeqTotalCost);
 extern void spgcostestimate(struct PlannerInfo *root,
 				struct IndexPath *path,
 				double loop_count,
 				Cost *indexStartupCost,
 				Cost *indexTotalCost,
 				Selectivity *indexSelectivity,
-				double *indexCorrelation);
+				double *indexCorrelation,
+				Cost *indexSeqTotalCost);
 extern void gincostestimate(struct PlannerInfo *root,
 				struct IndexPath *path,
 				double loop_count,
 				Cost *indexStartupCost,
 				Cost *indexTotalCost,
 				Selectivity *indexSelectivity,
-				double *indexCorrelation);
+				double *indexCorrelation,
+				Cost *indexSeqTotalCost);
 
 #endif   /* INDEX_SELFUNCS_H */

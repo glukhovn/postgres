@@ -243,6 +243,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			info->amhasgetbitmap = (amroutine->amgetbitmap != NULL);
 			info->amcostestimate = amroutine->amcostestimate;
 			Assert(info->amcostestimate != NULL);
+			info->amcanseqbmpscan = amroutine->amcanseqscan;
 
 			/*
 			 * Fetch the ordering information for the index, if any.

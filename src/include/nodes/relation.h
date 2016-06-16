@@ -621,6 +621,7 @@ typedef struct IndexOptInfo
 	bool		amsearchnulls;	/* can AM search for NULL/NOT NULL entries? */
 	bool		amhasgettuple;	/* does AM have amgettuple interface? */
 	bool		amhasgetbitmap; /* does AM have amgetbitmap interface? */
+	bool		amcanseqbmpscan;
 	/* Rather than include amapi.h here, we declare amcostestimate like this */
 	void		(*amcostestimate) ();	/* AM's cost estimator */
 } IndexOptInfo;
@@ -966,7 +967,9 @@ typedef struct IndexPath
 	List	   *indexorderbycols;
 	ScanDirection indexscandir;
 	Cost		indextotalcost;
+	Cost		indextotalseqcost;
 	Selectivity indexselectivity;
+	bool	    indexseqscan;
 } IndexPath;
 
 /*

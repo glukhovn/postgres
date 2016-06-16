@@ -98,6 +98,7 @@ bthandler(PG_FUNCTION_ARGS)
 	amroutine->amstorage = false;
 	amroutine->amclusterable = true;
 	amroutine->ampredlocks = true;
+	amroutine->amcanseqscan = false;
 	amroutine->amkeytype = InvalidOid;
 
 	amroutine->ambuild = btbuild;
@@ -418,7 +419,7 @@ btgetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
  *	btbeginscan() -- start a scan on a btree index
  */
 IndexScanDesc
-btbeginscan(Relation rel, int nkeys, int norderbys)
+btbeginscan(Relation rel, int nkeys, int norderbys, bool sequential)
 {
 	IndexScanDesc scan;
 	BTScanOpaque so;

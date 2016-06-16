@@ -527,6 +527,7 @@ _outBitmapIndexScan(StringInfo str, const BitmapIndexScan *node)
 	WRITE_OID_FIELD(indexid);
 	WRITE_NODE_FIELD(indexqual);
 	WRITE_NODE_FIELD(indexqualorig);
+	WRITE_BOOL_FIELD(sequential);
 }
 
 static void

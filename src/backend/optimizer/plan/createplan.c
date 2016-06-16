@@ -173,7 +173,8 @@ static IndexOnlyScan *make_indexonlyscan(List *qptlist, List *qpqual,
 				   ScanDirection indexscandir);
 static BitmapIndexScan *make_bitmap_indexscan(Index scanrelid, Oid indexid,
 					  List *indexqual,
-					  List *indexqualorig);
+					  List *indexqualorig,
+					  bool sequential);
 static BitmapHeapScan *make_bitmap_heapscan(List *qptlist,
 					 List *qpqual,
 					 Plan *lefttree,
@@ -2796,10 +2797,11 @@ create_bitmap_subplan(PlannerInfo *root, Path *bitmapqual,
 		plan = (Plan *) make_bitmap_indexscan(iscan->scan.scanrelid,
 											  iscan->indexid,
 											  iscan->indexqual,
-											  iscan->indexqualorig);
+											  iscan->indexqualorig,
+											  ipath->indexseqscan);
 		/* and set its cost/width fields appropriately */
 		plan->startup_cost = 0.0;
-		plan->total_cost = ipath->indextotalcost;
+		plan->total_cost = ipath->indexseqscan ? ipath->indextotalseqcost : ipath->indextotalcost;
 		plan->plan_rows =
 			clamp_row_est(ipath->indexselectivity * ipath->path.parent->tuples);
 		plan->plan_width = 0;	/* meaningless */
@@ -4745,7 +4747,8 @@ static BitmapIndexScan *
 make_bitmap_indexscan(Index scanrelid,
 					  Oid indexid,
 					  List *indexqual,
-					  List *indexqualorig)
+					  List *indexqualorig,
+					  bool sequential)
 {
 	BitmapIndexScan *node = makeNode(BitmapIndexScan);
 	Plan	   *plan = &node->scan.plan;
@@ -4758,6 +4761,7 @@ make_bitmap_indexscan(Index scanrelid,
 	node->indexid = indexid;
 	node->indexqual = indexqual;
 	node->indexqualorig = indexqualorig;
+	node->sequential = sequential;
 
 	return node;
 }

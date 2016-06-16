@@ -1108,6 +1108,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				const char *indexname =
 				explain_get_index_name(bitmapindexscan->indexid);
 
+				if (bitmapindexscan->sequential)
+					appendStringInfo(es->str, " (FULL)");
+
 				if (es->format == EXPLAIN_FORMAT_TEXT)
 					appendStringInfo(es->str, " on %s", indexname);
 				else

@@ -69,6 +69,7 @@ gisthandler(PG_FUNCTION_ARGS)
 	amroutine->amstorage = true;
 	amroutine->amclusterable = true;
 	amroutine->ampredlocks = false;
+	amroutine->amcanseqscan = true;
 	amroutine->amkeytype = InvalidOid;
 
 	amroutine->ambuild = gistbuild;

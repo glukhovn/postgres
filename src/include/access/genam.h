@@ -137,7 +137,7 @@ extern IndexScanDesc index_beginscan(Relation heapRelation,
 				int nkeys, int norderbys);
 extern IndexScanDesc index_beginscan_bitmap(Relation indexRelation,
 					   Snapshot snapshot,
-					   int nkeys);
+					   int nkeys, bool sequential);
 extern void index_rescan(IndexScanDesc scan,
 			 ScanKey keys, int nkeys,
 			 ScanKey orderbys, int norderbys);

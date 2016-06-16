@@ -191,7 +191,7 @@ extern bool spginsert(Relation index, Datum *values, bool *isnull,
 		  IndexUniqueCheck checkUnique);
 
 /* spgscan.c */
-extern IndexScanDesc spgbeginscan(Relation rel, int keysz, int orderbysz);
+extern IndexScanDesc spgbeginscan(Relation rel, int keysz, int orderbysz, bool sequential);
 extern void spgendscan(IndexScanDesc scan);
 extern void spgrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 		  ScanKey orderbys, int norderbys);

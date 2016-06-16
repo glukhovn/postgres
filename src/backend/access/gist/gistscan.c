@@ -55,7 +55,7 @@ pairingheap_GISTSearchItem_cmp(const pairingheap_node *a, const pairingheap_node
  */
 
 IndexScanDesc
-gistbeginscan(Relation r, int nkeys, int norderbys)
+gistbeginscan(Relation r, int nkeys, int norderbys, bool sequential)
 {
 	IndexScanDesc scan;
 	GISTSTATE  *giststate;
@@ -79,6 +79,7 @@ gistbeginscan(Relation r, int nkeys, int norderbys)
 	giststate->tempCxt = createTempGistContext();
 	so->queue = NULL;
 	so->queueCxt = giststate->scanCxt;	/* see gistrescan */
+	so->sequential = sequential;
 
 	/* workspaces with size dependent on numberOfOrderBys: */
 	so->distances = palloc(sizeof(double) * scan->numberOfOrderBys);

@@ -120,7 +120,7 @@ do { \
 } while(0)
 
 static IndexScanDesc index_beginscan_internal(Relation indexRelation,
-						 int nkeys, int norderbys, Snapshot snapshot);
+						 int nkeys, int norderbys, Snapshot snapshot, bool sequential);
 
 
 /* ----------------------------------------------------------------
@@ -219,7 +219,8 @@ index_beginscan(Relation heapRelation,
 {
 	IndexScanDesc scan;
 
-	scan = index_beginscan_internal(indexRelation, nkeys, norderbys, snapshot);
+	scan = index_beginscan_internal(indexRelation, nkeys, norderbys, snapshot,
+									false);
 
 	/*
 	 * Save additional parameters into the scandesc.  Everything else was set
@@ -240,11 +241,13 @@ index_beginscan(Relation heapRelation,
 IndexScanDesc
 index_beginscan_bitmap(Relation indexRelation,
 					   Snapshot snapshot,
-					   int nkeys)
+					   int nkeys,
+					   bool sequential)
 {
 	IndexScanDesc scan;
 
-	scan = index_beginscan_internal(indexRelation, nkeys, 0, snapshot);
+	scan = index_beginscan_internal(indexRelation, nkeys, 0, snapshot,
+									sequential);
 
 	/*
 	 * Save additional parameters into the scandesc.  Everything else was set
@@ -260,7 +263,7 @@ index_beginscan_bitmap(Relation indexRelation,
  */
 static IndexScanDesc
 index_beginscan_internal(Relation indexRelation,
-						 int nkeys, int norderbys, Snapshot snapshot)
+						 int nkeys, int norderbys, Snapshot snapshot, bool sequential)
 {
 	RELATION_CHECKS;
 	CHECK_REL_PROCEDURE(ambeginscan);
@@ -277,7 +280,7 @@ index_beginscan_internal(Relation indexRelation,
 	 * Tell the AM to open a scan.
 	 */
 	return indexRelation->rd_amroutine->ambeginscan(indexRelation, nkeys,
-													norderbys);
+													norderbys, sequential);
 }
 
 /* ----------------

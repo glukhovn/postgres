@@ -119,6 +119,7 @@ bool		enable_seqscan = true;
 bool		enable_indexscan = true;
 bool		enable_indexonlyscan = true;
 bool		enable_bitmapscan = true;
+bool		enable_seqindexscan = true;
 bool		enable_tidscan = true;
 bool		enable_sort = true;
 bool		enable_hashagg = true;
@@ -420,6 +421,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	Cost		run_cost = 0;
 	Cost		indexStartupCost;
 	Cost		indexTotalCost;
+	Cost		indexSeqTotalCost = disable_cost;
 	Selectivity indexSelectivity;
 	double		indexCorrelation,
 				csquared;
@@ -477,7 +479,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	amcostestimate = (amcostestimate_function) index->amcostestimate;
 	amcostestimate(root, path, loop_count,
 				   &indexStartupCost, &indexTotalCost,
-				   &indexSelectivity, &indexCorrelation);
+				   &indexSelectivity, &indexCorrelation,
+				   &indexSeqTotalCost);
 
 	/*
 	 * Save amcostestimate's results for possible use in bitmap scan planning.
@@ -486,6 +489,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	 */
 	path->indextotalcost = indexTotalCost;
 	path->indexselectivity = indexSelectivity;
+	path->indexseqscan = false;
+	path->indextotalseqcost = indexSeqTotalCost;
 
 	/* all costs for touching index itself included here */
 	startup_cost += indexStartupCost;
@@ -952,8 +957,16 @@ cost_bitmap_tree_node(Path *path, Cost *cost, Selectivity *selec)
 {
 	if (IsA(path, IndexPath))
 	{
-		*cost = ((IndexPath *) path)->indextotalcost;
-		*selec = ((IndexPath *) path)->indexselectivity;
+		IndexPath * ipath = (IndexPath *) path;
+
+		*cost = ipath->indextotalcost;
+		*selec = ipath->indexselectivity;
+
+		if (enable_seqindexscan && ipath->indextotalseqcost < *cost)
+		{
+			*cost = ipath->indextotalseqcost;
+			ipath->indexseqscan = true;
+		}
 
 		/*
 		 * Charge a small amount per retrieved tuple to reflect the costs of

@@ -177,6 +177,7 @@ typedef struct GISTScanOpaqueData
 	OffsetNumber curPageData;	/* next item to return */
 	MemoryContext pageDataCxt;	/* context holding the fetched tuples, for
 								 * index-only scans */
+	bool		sequential;
 } GISTScanOpaqueData;
 
 typedef GISTScanOpaqueData *GISTScanOpaque;

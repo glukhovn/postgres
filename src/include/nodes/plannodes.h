@@ -403,6 +403,7 @@ typedef struct BitmapIndexScan
 	Oid			indexid;		/* OID of index to scan */
 	List	   *indexqual;		/* list of index quals (OpExprs) */
 	List	   *indexqualorig;	/* the same in original form */
+	bool		sequential;
 } BitmapIndexScan;
 
 /* ----------------

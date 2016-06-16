@@ -815,6 +815,15 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
+		{"enable_seqindexscan", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables the planner's use of sequential bitmap index-scan plans."),
+			NULL
+		},
+		&enable_seqindexscan,
+		true,
+		NULL, NULL, NULL
+	},
+	{
 		{"enable_tidscan", PGC_USERSET, QUERY_TUNING_METHOD,
 			gettext_noop("Enables the planner's use of TID scan plans."),
 			NULL

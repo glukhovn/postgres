@@ -301,7 +301,8 @@ ExecInitBitmapIndexScan(BitmapIndexScan *node, EState *estate, int eflags)
 	indexstate->biss_ScanDesc =
 		index_beginscan_bitmap(indexstate->biss_RelationDesc,
 							   estate->es_snapshot,
-							   indexstate->biss_NumScanKeys);
+							   indexstate->biss_NumScanKeys,
+							   node->sequential);
 
 	/*
 	 * If no run-time keys to calculate, go ahead and pass the scankeys to the
