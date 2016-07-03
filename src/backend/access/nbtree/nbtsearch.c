@@ -513,6 +513,25 @@ _bt_compare(Relation rel,
 }
 
 /*
+ * _bt_return_current_item() -- Prepare current scan state item for return.
+ *
+ * This function is used only in "return _bt_return_current_item();" statements
+ * and always returns true.
+ */
+static inline bool
+_bt_return_current_item(IndexScanDesc scan, BTScanPos pos, char *currTuples)
+{
+	BTScanPosItem *currItem = &pos->items[pos->itemIndex];
+
+	scan->xs_ctup.t_self = currItem->heapTid;
+
+	if (scan->xs_want_itup)
+		scan->xs_itup = (IndexTuple) (currTuples + currItem->tupleOffset);
+
+	return true;
+}
+
+/*
  *	_bt_first() -- Find the first item in a scan.
  *
  *		We need to be clever about the direction of scan, the search
@@ -550,7 +569,6 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 	int			i;
 	bool		status = true;
 	StrategyNumber strat_total;
-	BTScanPosItem *currItem;
 	BlockNumber blkno;
 
 	Assert(!BTScanPosIsValid(so->currPos));
@@ -1103,12 +1121,7 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 
 readcomplete:
 	/* OK, itemIndex says what to return */
-	currItem = &so->currPos.items[so->currPos.itemIndex];
-	scan->xs_ctup.t_self = currItem->heapTid;
-	if (scan->xs_want_itup)
-		scan->xs_itup = (IndexTuple) (so->currTuples + currItem->tupleOffset);
-
-	return true;
+	return _bt_return_current_item(scan, &so->currPos, so->currTuples);
 }
 
 /*
@@ -1129,7 +1142,6 @@ bool
 _bt_next(IndexScanDesc scan, ScanDirection dir)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
-	BTScanPosItem *currItem;
 
 	/*
 	 * Advance to next tuple on current page; or if there's no more, try to
@@ -1153,12 +1165,7 @@ _bt_next(IndexScanDesc scan, ScanDirection dir)
 	}
 
 	/* OK, itemIndex says what to return */
-	currItem = &so->currPos.items[so->currPos.itemIndex];
-	scan->xs_ctup.t_self = currItem->heapTid;
-	if (scan->xs_want_itup)
-		scan->xs_itup = (IndexTuple) (so->currTuples + currItem->tupleOffset);
-
-	return true;
+	return _bt_return_current_item(scan, &so->currPos, so->currTuples);
 }
 
 /*
@@ -1851,7 +1858,6 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 	Page		page;
 	BTPageOpaque opaque;
 	OffsetNumber start;
-	BTScanPosItem *currItem;
 
 	/*
 	 * Scan down to the leftmost or rightmost leaf page.  This is a simplified
@@ -1920,12 +1926,7 @@ _bt_endpoint(IndexScanDesc scan, ScanDirection dir)
 	}
 
 	/* OK, itemIndex says what to return */
-	currItem = &so->currPos.items[so->currPos.itemIndex];
-	scan->xs_ctup.t_self = currItem->heapTid;
-	if (scan->xs_want_itup)
-		scan->xs_itup = (IndexTuple) (so->currTuples + currItem->tupleOffset);
-
-	return true;
+	return _bt_return_current_item(scan, &so->currPos, so->currTuples);
 }
 
 /*
