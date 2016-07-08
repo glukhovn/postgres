@@ -1725,26 +1725,26 @@ _bt_check_rowcompare(ScanKey skey, IndexTuple tuple, TupleDesc tupdesc,
  * away and the TID was re-used by a completely different heap tuple.
  */
 void
-_bt_killitems(IndexScanDesc scan)
+_bt_killitems(BTScanState state, Relation indexRelation)
 {
-	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTScanPos	pos = &state->currPos;
 	Page		page;
 	BTPageOpaque opaque;
 	OffsetNumber minoff;
 	OffsetNumber maxoff;
 	int			i;
-	int			numKilled = so->numKilled;
+	int			numKilled = state->numKilled;
 	bool		killedsomething = false;
 
-	Assert(BTScanPosIsValid(so->currPos));
+	Assert(BTScanPosIsValid(state->currPos));
 
 	/*
 	 * Always reset the scan state, so we don't look for same items on other
 	 * pages.
 	 */
-	so->numKilled = 0;
+	state->numKilled = 0;
 
-	if (BTScanPosIsPinned(so->currPos))
+	if (BTScanPosIsPinned(*pos))
 	{
 		/*
 		 * We have held the pin on this page since we read the index tuples,
@@ -1752,28 +1752,28 @@ _bt_killitems(IndexScanDesc scan)
 		 * re-use of any TID on the page, so there is no need to check the
 		 * LSN.
 		 */
-		LockBuffer(so->currPos.buf, BT_READ);
+		LockBuffer(pos->buf, BT_READ);
 
-		page = BufferGetPage(so->currPos.buf);
+		page = BufferGetPage(pos->buf);
 	}
 	else
 	{
 		Buffer		buf;
 
 		/* Attempt to re-read the buffer, getting pin and lock. */
-		buf = _bt_getbuf(scan->indexRelation, so->currPos.currPage, BT_READ);
+		buf = _bt_getbuf(indexRelation, pos->currPage, BT_READ);
 
 		/* It might not exist anymore; in which case we can't hint it. */
 		if (!BufferIsValid(buf))
 			return;
 
 		page = BufferGetPage(buf);
-		if (PageGetLSN(page) == so->currPos.lsn)
-			so->currPos.buf = buf;
+		if (PageGetLSN(page) == pos->lsn)
+			pos->buf = buf;
 		else
 		{
 			/* Modified while not pinned means hinting is not safe. */
-			_bt_relbuf(scan->indexRelation, buf);
+			_bt_relbuf(indexRelation, buf);
 			return;
 		}
 	}
@@ -1784,12 +1784,12 @@ _bt_killitems(IndexScanDesc scan)
 
 	for (i = 0; i < numKilled; i++)
 	{
-		int			itemIndex = so->killedItems[i];
-		BTScanPosItem *kitem = &so->currPos.items[itemIndex];
+		int			itemIndex = state->killedItems[i];
+		BTScanPosItem *kitem = &pos->items[itemIndex];
 		OffsetNumber offnum = kitem->indexOffset;
 
-		Assert(itemIndex >= so->currPos.firstItem &&
-			   itemIndex <= so->currPos.lastItem);
+		Assert(itemIndex >= pos->firstItem &&
+			   itemIndex <= pos->lastItem);
 		if (offnum < minoff)
 			continue;			/* pure paranoia */
 		while (offnum <= maxoff)
@@ -1817,10 +1817,10 @@ _bt_killitems(IndexScanDesc scan)
 	if (killedsomething)
 	{
 		opaque->btpo_flags |= BTP_HAS_GARBAGE;
-		MarkBufferDirtyHint(so->currPos.buf, true);
+		MarkBufferDirtyHint(pos->buf, true);
 	}
 
-	LockBuffer(so->currPos.buf, BUFFER_LOCK_UNLOCK);
+	LockBuffer(pos->buf, BUFFER_LOCK_UNLOCK);
 }
 
 
@@ -2064,4 +2064,11 @@ btproperty(Oid index_oid, int attno,
 		default:
 			return false;		/* punt to generic code */
 	}
+}
+
+void
+_bt_allocate_tuple_workspaces(BTScanState state)
+{
+	state->currTuples = (char *) palloc(BLCKSZ * 2);
+	state->markTuples = state->currTuples + BLCKSZ;
 }
