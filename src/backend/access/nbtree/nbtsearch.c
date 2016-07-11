@@ -566,6 +566,127 @@ _bt_load_first_page(IndexScanDesc scan, BTScanState state, ScanDirection dir,
 }
 
 /*
+ *  _bt_calc_current_dist() -- Calculate distance from the current item
+ *		of the scan state to the target order-by ScanKey argument.
+ */
+static void
+_bt_calc_current_dist(IndexScanDesc scan, BTScanState state)
+{
+	BTScanOpaque	so = (BTScanOpaque) scan->opaque;
+	BTScanPosItem  *currItem = &state->currPos.items[state->currPos.itemIndex];
+	IndexTuple		itup = (IndexTuple) (state->currTuples + currItem->tupleOffset);
+	ScanKey			scankey = &scan->orderByData[0];
+	Datum			value;
+
+	value = index_getattr(itup, 1, scan->xs_itupdesc, &state->currIsNull);
+
+	if (state->currIsNull)
+		return; /* NULL distance */
+
+	value = FunctionCall2Coll(&scankey->sk_func,
+							  scankey->sk_collation,
+							  value,
+							  scankey->sk_argument);
+
+	/* free previous distance value for by-ref types */
+	if (!so->distanceTypeByVal && DatumGetPointer(state->currDistance))
+		pfree(DatumGetPointer(state->currDistance));
+
+	state->currDistance = value;
+}
+
+/*
+ *  _bt_compare_current_dist() -- Compare current distances of the left and right scan states.
+ *
+ *  NULL distances are considered to be greater than any non-NULL distances.
+ *
+ *  Returns true if right distance is lesser than left, otherwise false.
+ */
+static bool
+_bt_compare_current_dist(BTScanOpaque so, BTScanState rstate, BTScanState lstate)
+{
+	if (lstate->currIsNull)
+		return true; /* non-NULL < NULL */
+
+	if (rstate->currIsNull)
+		return false; /* NULL > non-NULL */
+
+	return DatumGetBool(FunctionCall2Coll(&so->distanceCmpProc,
+										  InvalidOid, /* XXX collation for distance comparison */
+										  rstate->currDistance,
+										  lstate->currDistance));
+}
+
+/*
+ * _bt_init_knn_scan() -- Init additional scan state for KNN search.
+ *
+ * Caller must pin and read-lock scan->state.currPos.buf buffer.
+ *
+ * If empty result was found returned false.
+ * Otherwise prepared current item, and returned true.
+ */
+static bool
+_bt_init_knn_scan(IndexScanDesc scan, OffsetNumber offnum)
+{
+	BTScanOpaque	so = (BTScanOpaque) scan->opaque;
+	BTScanState		rstate = &so->state; /* right (forward) main scan state */
+	BTScanState		lstate; /* additional left (backward) KNN scan state */
+	Buffer			buf = rstate->currPos.buf;
+	bool			left,
+					right;
+
+	lstate = so->knnState = (BTScanState) palloc(sizeof(BTScanStateData));
+	_bt_allocate_tuple_workspaces(lstate);
+
+	if (!scan->xs_want_itup)
+	{
+		/* We need to request index tuples for distance comparison. */
+		scan->xs_want_itup = true;
+		_bt_allocate_tuple_workspaces(rstate);
+	}
+
+	/* Bump pin and lock count before BTScanPosData copying. */
+	IncrBufferRefCount(buf);
+	LockBuffer(buf, BT_READ);
+
+	memcpy(&lstate->currPos, &rstate->currPos, sizeof(BTScanPosData));
+	lstate->currPos.moreLeft = true;
+	lstate->currPos.moreRight = false;
+
+	BTScanPosInvalidate(lstate->markPos);
+	lstate->markItemIndex = -1;
+	lstate->killedItems = NULL;
+	lstate->numKilled = 0;
+	lstate->currDistance = PointerGetDatum(NULL);
+	lstate->markDistance = PointerGetDatum(NULL);
+
+	/* Load first pages from the both scans. */
+	right = _bt_load_first_page(scan, rstate, ForwardScanDirection, offnum);
+	left = _bt_load_first_page(scan, lstate, BackwardScanDirection,
+							   OffsetNumberPrev(offnum));
+
+	if (!left && !right)
+		return false; /* empty result */
+
+	if (left && right)
+	{
+		/*
+		 * We have found items in both scan directions,
+		 * determine nearest item to return.
+		 */
+		_bt_calc_current_dist(scan, rstate);
+		_bt_calc_current_dist(scan, lstate);
+		so->currRightIsNearest = _bt_compare_current_dist(so, rstate, lstate);
+
+		/* Reset right flag if the left item is nearer. */
+		right = so->currRightIsNearest;
+	}
+
+	/* Return current item of the selected scan direction. */
+	return _bt_return_current_item(scan, right ? rstate : lstate);
+}
+
+/*
  *	_bt_first() -- Find the first item in a scan.
  *
  *		We need to be clever about the direction of scan, the search
@@ -694,7 +815,21 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 	 *----------
 	 */
 	strat_total = BTEqualStrategyNumber;
-	if (so->numberOfKeys > 0)
+
+	if (scan->numberOfOrderBys > 0)
+	{
+		if (_bt_process_orderings(scan, startKeys, &keysCount, notnullkeys))
+			/* use bidirectional KNN scan */
+			strat_total = BtreeKNNSearchStrategyNumber;
+
+		/* use selected KNN scan direction */
+		if (so->scanDirection != NoMovementScanDirection)
+			dir = so->scanDirection;
+	}
+
+	if (so->numberOfKeys > 0 &&
+	/* startKeys for KNN search already have been initialized */
+		strat_total != BtreeKNNSearchStrategyNumber)
 	{
 		AttrNumber	curattr;
 		ScanKey		chosen;
@@ -1049,6 +1184,7 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 			break;
 
 		case BTGreaterEqualStrategyNumber:
+		case BtreeKNNSearchStrategyNumber:
 
 			/*
 			 * Find first item >= scankey.  (This is only used for forward
@@ -1135,8 +1271,11 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 	Assert(!BTScanPosIsValid(*currPos));
 	currPos->buf = buf;
 
+	if (strat_total == BtreeKNNSearchStrategyNumber)
+		return _bt_init_knn_scan(scan, offnum);
+
 	if (!_bt_load_first_page(scan, &so->state, dir, offnum))
-		return false;
+		return false; /* empty result */
 
 readcomplete:
 	/* OK, currPos->itemIndex says what to return */
@@ -1144,8 +1283,10 @@ readcomplete:
 }
 
 /*
- *	Advance to next tuple on current page; or if there's no more,
- *	try to step to the next page with data.
+ *	_bt_next_item() -- Advance to next tuple on current page;
+ *		or if there's no more, try to step to the next page with data.
+ *
+ *	If there are no more matching records in the given direction
  */
 static bool
 _bt_next_item(IndexScanDesc scan, BTScanState state, ScanDirection dir)
@@ -1162,6 +1303,52 @@ _bt_next_item(IndexScanDesc scan, BTScanState state, ScanDirection dir)
 	}
 
 	return _bt_steppage(scan, state, dir);
+}
+
+/*
+ *	_bt_next_nearest() -- Return next nearest item from bidirectional KNN scan.
+ */
+static bool
+_bt_next_nearest(IndexScanDesc scan)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+	BTScanState rstate = &so->state;
+	BTScanState lstate = so->knnState;
+	bool		right = BTScanPosIsValid(rstate->currPos);
+	bool		left = BTScanPosIsValid(lstate->currPos);
+	bool		advanceRight;
+
+	if (right && left)
+		advanceRight = so->currRightIsNearest;
+	else if (right)
+		advanceRight = true;
+	else if (left)
+		advanceRight = false;
+	else
+		return false; /* end of the scan */
+
+	*(advanceRight ? &right : &left) =
+		_bt_next_item(scan,
+					  advanceRight ? rstate : lstate,
+					  advanceRight ? ForwardScanDirection :
+					  BackwardScanDirection);
+
+	if (!left && !right)
+		return false; /* end of the scan */
+
+	if (left && right)
+	{
+		/*
+		 * If there are items in both scans we must recalculate distance
+		 * in the advanced scan.
+		 */
+		_bt_calc_current_dist(scan, advanceRight ? rstate : lstate);
+		so->currRightIsNearest = _bt_compare_current_dist(so, rstate, lstate);
+		right = so->currRightIsNearest;
+	}
+
+	/* return nearest item */
+	return _bt_return_current_item(scan, right ? rstate : lstate);
 }
 
 /*
@@ -1182,6 +1369,10 @@ bool
 _bt_next(IndexScanDesc scan, ScanDirection dir)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+
+	if (so->knnState)
+		/* return next neareset item from KNN scan */
+		return _bt_next_nearest(scan);
 
 	if (!_bt_next_item(scan, &so->state, dir))
 		return false;

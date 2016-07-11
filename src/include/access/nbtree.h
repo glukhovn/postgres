@@ -398,6 +398,12 @@ typedef struct BTScanStateData
 	/* keep these last in struct for efficiency */
 	BTScanPosData currPos;		/* current position data */
 	BTScanPosData markPos;		/* marked position, if any */
+
+	/* KNN-search fields: */
+	Datum		currDistance;	/* current distance */
+	Datum		markDistance;	/* marked distance */
+	bool		currIsNull;		/* current item is NULL */
+	bool		markIsNull;		/* marked item is NULL */
 }	BTScanStateData, *BTScanState;
 
 typedef struct BTScanOpaqueData
@@ -416,7 +422,17 @@ typedef struct BTScanOpaqueData
 	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
 	MemoryContext arrayContext; /* scan-lifespan context for array data */
 
-	BTScanStateData	state;
+	BTScanStateData state;		/* main scan state */
+
+	/* KNN-search fields: */
+	BTScanState knnState;			/* optional scan state for KNN search */
+	ScanDirection scanDirection;	/* selected scan direction for
+									 * unidirectional KNN scan */
+	FmgrInfo	distanceCmpProc;	/* distance comparison procedure */
+	int16		distanceTypeLen;	/* distance typlen */
+	bool		distanceTypeByVal;	/* distance typebyval */
+	bool		currRightIsNearest;	/* current right item is nearest */
+	bool		markRightIsNearest;	/* marked right item is nearest */
 } BTScanOpaqueData;
 
 typedef BTScanOpaqueData *BTScanOpaque;
@@ -544,6 +560,8 @@ extern bool btproperty(Oid index_oid, int attno,
 		   IndexAMProperty prop, const char *propname,
 		   bool *res, bool *isnull);
 extern void _bt_allocate_tuple_workspaces(BTScanState state);
+extern bool _bt_process_orderings(IndexScanDesc scan,
+				  ScanKey *startKeys, int *keysCount, ScanKeyData bufKeys[]);
 
 /*
  * prototypes for functions in nbtvalidate.c

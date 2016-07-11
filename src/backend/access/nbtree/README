@@ -624,6 +624,24 @@ item is irrelevant, and need not be stored at all.  This arrangement
 corresponds to the fact that an L&Y non-leaf page has one more pointer
 than key.
 
+Nearest-neighbor search
+-----------------------
+
+There is a special scan strategy for nearest-neighbor (kNN) search,
+that is used in queries with ORDER BY distance clauses like this:
+SELECT * FROM tab WHERE col > const1 ORDER BY col <-> const2 LIMIT k.
+But, unlike GiST, B-tree supports only a one ordering operator on the
+first index column.
+
+At the beginning of kNN scan, we need to determine which strategy we
+will use --- a special bidirectional or a ordinary unidirectional.
+If the point from which we measure the distance falls into the scan range,
+we use bidirectional scan starting from this point, else we use simple
+unidirectional scan in the right direction.  Algorithm of a bidirectional
+scan is very simple: at each step we advancing scan in that direction,
+which has the nearest point.
+
+
 Notes to Operator Class Implementors
 ------------------------------------
 
@@ -659,6 +677,18 @@ procedure, of course.)
 
 The other three operators are defined in terms of these two in the obvious way,
 and must act consistently with them.
+
+To implement the distance ordered (nearest-neighbor) search, we only need
+to define a distance operator (usually it called <->) with a correpsonding
+operator family for distance comparison in the index's operator class.
+These operators must satisfy the following assumptions for all non-null
+values A,B,C of the datatype:
+
+	A <-> B = B <-> A								symmetric law
+	if A = B, then A <-> C = B <-> C				distance equivalence
+	if (A <= B and B <= C) or (A >= B and B >= C),
+		then A <-> B <= A <-> C						monotonicity
+
 
 For an operator family supporting multiple datatypes, the above laws must hold
 when A,B,C are taken from any datatypes in the family.  The transitive laws
