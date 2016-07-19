@@ -49,6 +49,9 @@ typedef struct spgConfigOut
 	Oid			leafType;		/* Data type of leaf-tuple values */
 	bool		canReturnData;	/* Opclass can reconstruct original data */
 	bool		longValuesOK;	/* Opclass can cope with values > 1 page */
+		/* If opclass needs to store any supplimentary data in nodes during the
+			  scan - the size of the structure */
+	int suppLen;
 } spgConfigOut;
 
 /*
@@ -136,11 +139,14 @@ typedef struct spgPickSplitOut
 typedef struct spgInnerConsistentIn
 {
 	ScanKey		scankeys;		/* array of operators and comparison values */
+	ScanKey		orderbyKeys;
 	int			nkeys;			/* length of array */
+	int			norderbys;
 
 	Datum		reconstructedValue; /* value reconstructed at parent */
 	void	   *traversalValue; /* opclass-specific traverse value */
 	MemoryContext traversalMemoryContext;	/* put new traverse values here */
+	Datum		suppValue;		/* supplimentary value of parent */
 	int			level;			/* current level (counting from zero) */
 	bool		returnData;		/* original data must be returned? */
 
@@ -159,6 +165,8 @@ typedef struct spgInnerConsistentOut
 	int		   *levelAdds;		/* increment level by this much for each */
 	Datum	   *reconstructedValues;	/* associated reconstructed values */
 	void	  **traversalValues;	/* opclass-specific traverse values */
+	Datum	   *suppValues;		/* any additional data implementation needs to be stored in the child nodes */
+	double	  **distances;		/* associated distances */
 } spgInnerConsistentOut;
 
 /*
@@ -167,7 +175,10 @@ typedef struct spgInnerConsistentOut
 typedef struct spgLeafConsistentIn
 {
 	ScanKey		scankeys;		/* array of operators and comparison values */
+	ScanKey		orderbykeys;	/* array of ordering operators and comparison
+								 * values */
 	int			nkeys;			/* length of array */
+	int			norderbys;
 
 	Datum		reconstructedValue; /* value reconstructed at parent */
 	void	   *traversalValue; /* opclass-specific traverse value */
@@ -181,6 +192,7 @@ typedef struct spgLeafConsistentOut
 {
 	Datum		leafValue;		/* reconstructed original data, if any */
 	bool		recheck;		/* set true if operator must be rechecked */
+	double	   *distances;		/* associated distances */
 } spgLeafConsistentOut;
 
 

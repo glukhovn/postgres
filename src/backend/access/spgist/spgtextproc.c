@@ -100,6 +100,7 @@ spg_text_config(PG_FUNCTION_ARGS)
 	cfg->labelType = INT2OID;
 	cfg->canReturnData = true;
 	cfg->longValuesOK = true;	/* suffixing will shorten long values */
+	cfg->suppLen = 0; /* we don't need any supplimentary data */
 	PG_RETURN_VOID();
 }
 
