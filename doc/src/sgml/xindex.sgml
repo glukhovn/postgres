@@ -1179,10 +1179,10 @@ ALTER OPERATOR FAMILY integer_ops USING btree ADD
   <title>Ordering Operators</title>
 
   <para>
-   Some index access methods (currently, only B-tree and GiST) support the concept of
-   <firstterm>ordering operators</>.  What we have been discussing so far
-   are <firstterm>search operators</>.  A search operator is one for which
-   the index can be searched to find all rows satisfying
+   Some index access methods (currently, only B-tree, GiST and SP-GiST) support
+   the concept of <firstterm>ordering operators</>.  What we have been
+   discussing so far are <firstterm>search operators</>.  A search operator is
+   one for which the index can be searched to find all rows satisfying
    <literal>WHERE</>
    <replaceable>indexed_column</>
    <replaceable>operator</>

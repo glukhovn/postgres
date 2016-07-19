@@ -16,8 +16,10 @@
 
 #include "access/itup.h"
 #include "access/spgist.h"
+#include "lib/rbtree.h"
 #include "nodes/tidbitmap.h"
 #include "storage/buf.h"
+#include "storage/relfilenode.h"
 #include "utils/relcache.h"
 
 
@@ -129,13 +131,47 @@ typedef struct SpGistState
 	bool		isBuild;		/* true if doing index build */
 } SpGistState;
 
+typedef enum SPGistSearchItemState
+{
+	HEAP_RECHECK,				/* SearchItem is heap item and recheck is
+								 * needed before reporting */
+	HEAP_NORECHECK,				/* SearchItem is heap item and no recheck is
+								 * needed */
+	INNER						/* SearchItem is inner tree item - recheck
+								 * irrelevant */
+} SPGistSearchItemState;
+
+typedef struct SpGistSearchItem
+{
+	SPGistSearchItemState itemState;	/* see above */
+	Datum		value;			/* value reconstructed from parent or
+								 * leafValue if heaptuple */
+	Datum suppValue;			/* any additional value an opclass needs to be stored */
+	void	   *traversalValue; /* opclass-specific traverse value */
+	int			level;			/* level of items on this page */
+	struct SpGistSearchItem *next;	  /* list link */
+	ItemPointerData heap;		/* heap info, if heap tuple */
+	bool		isnull;
+} SpGistSearchItem;
+
+typedef struct SpGistSearchTreeItem
+{
+	RBNode		rbnode;			/* this is an RBTree item */
+	SpGistSearchItem *head;		/* first chain member */
+	SpGistSearchItem *lastHeap;	/* last heap-tuple member, if any */
+	double		distances[1];	/* array with numberOfOrderBys entries */
+} SpGistSearchTreeItem;
+
 /*
  * Private state of an index scan
  */
 typedef struct SpGistScanOpaqueData
 {
 	SpGistState state;			/* see above */
+	RBTree	   *queue;			/* queue of unvisited items */
+	MemoryContext queueCxt;		/* context holding the queue */
 	MemoryContext tempCxt;		/* short-lived memory context */
+	SpGistSearchTreeItem *curTreeItem;
 
 	/* Control flags showing whether to search nulls and/or non-nulls */
 	bool		searchNulls;	/* scan matches (all) null entries */
@@ -145,8 +181,9 @@ typedef struct SpGistScanOpaqueData
 	int			numberOfKeys;	/* number of index qualifier conditions */
 	ScanKey		keyData;		/* array of index qualifier descriptors */
 
-	/* Stack of yet-to-be-visited pages */
-	List	   *scanStack;		/* List of ScanStackEntrys */
+	/* Pre-allocated workspace arrays: */
+	SpGistSearchTreeItem *tmpTreeItem;	/* workspace to pass to rb_insert */
+	double	   *distances;		/* output area for gistindex_keytest */
 
 	/* These fields are only used in amgetbitmap scans: */
 	TIDBitmap  *tbm;			/* bitmap being filled */
@@ -407,6 +444,9 @@ extern OffsetNumber SpGistPageAddNewItem(SpGistState *state, Page page,
 					 Item item, Size size,
 					 OffsetNumber *startOffset,
 					 bool errorOK);
+extern bool spgproperty(Oid index_oid, int attno,
+			IndexAMProperty prop, const char *propname,
+			bool *res, bool *isnull);
 
 /* spgdoinsert.c */
 extern void spgUpdateNodeLink(SpGistInnerTuple tup, int nodeN,

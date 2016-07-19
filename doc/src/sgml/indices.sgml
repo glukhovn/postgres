@@ -299,6 +299,14 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
   </para>
 
   <para>
+   SP-GiST indexes, like GiST indexes, are also capable of optimizing
+   <quote>nearest-neighbor</> searches.  The ability to do this is again
+   dependent on the particular operator class being used.
+   In <xref linkend="spgist-builtin-opclasses-table">, operators that can be
+   used in this way are listed in the column <quote>Ordering Operators</>.
+  </para>
+
+  <para>
    <indexterm>
     <primary>index</primary>
     <secondary>GIN</secondary>
