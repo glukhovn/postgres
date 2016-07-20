@@ -112,7 +112,8 @@ spgNewHeapItem(SpGistScanOpaque so, int level,
 	newItem->level = level;
 	newItem->heap = heapPtr;
 	/* copy value to queue cxt out of tmp cxt */
-	newItem->value = datumCopy(leafValue, so->state.attLeafType.attbyval,
+	newItem->value = isnull ? (Datum) 0 :
+			datumCopy(leafValue, so->state.attLeafType.attbyval,
 				so->state.attLeafType.attlen);
 	newItem->traversalValue = NULL;
 	newItem->itemState = recheck ? HEAP_RECHECK : HEAP_NORECHECK;
