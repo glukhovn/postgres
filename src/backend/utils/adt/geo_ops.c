@@ -41,8 +41,6 @@ enum path_delim
 static int	point_inside(Point *p, int npts, Point *plist);
 static int	lseg_crossing(double x, double y, double px, double py);
 static BOX *box_construct(double x1, double x2, double y1, double y2);
-static BOX *box_copy(BOX *box);
-static BOX *box_fill(BOX *result, double x1, double x2, double y1, double y2);
 static bool box_ov(BOX *box1, BOX *box2);
 static double box_ht(BOX *box);
 static double box_wd(BOX *box);
@@ -452,7 +450,7 @@ box_construct(double x1, double x2, double y1, double y2)
 
 /*		box_fill		-		fill in a given box struct
  */
-static BOX *
+BOX *
 box_fill(BOX *result, double x1, double x2, double y1, double y2)
 {
 	if (x1 > x2)
@@ -482,8 +480,8 @@ box_fill(BOX *result, double x1, double x2, double y1, double y2)
 
 /*		box_copy		-		copy a box
  */
-static BOX *
-box_copy(BOX *box)
+BOX *
+box_copy(const BOX *box)
 {
 	BOX		   *result = (BOX *) palloc(sizeof(BOX));
 

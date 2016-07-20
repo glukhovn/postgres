@@ -183,4 +183,8 @@ extern double point_dt(Point *pt1, Point *pt2);
 extern double point_sl(Point *pt1, Point *pt2);
 extern double pg_hypot(double x, double y);
 
+/* private box routines */
+extern BOX *box_fill(BOX *box, double xlo, double xhi, double ylo, double yhi);
+extern BOX *box_copy(const BOX *box);
+
 #endif							/* GEO_DECLS_H */
