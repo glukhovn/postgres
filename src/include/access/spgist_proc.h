@@ -26,7 +26,7 @@ extern RBNode * SpGistSearchTreeItemAllocator(void *arg);
 
 extern void SpGistSearchTreeItemDeleter(RBNode *rb, void *arg);
 
-extern void spgAddSearchItemToQueue(IndexScanDesc scan, SpGistSearchItem *item, double *distances);
+extern void spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item, double *distances);
 
 extern SpGistSearchItem *spgNewHeapItem(SpGistScanOpaque so, int level,
 		ItemPointerData heapPtr, Datum leafValue, bool recheck, bool isnull);

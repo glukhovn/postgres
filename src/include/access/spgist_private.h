@@ -180,6 +180,8 @@ typedef struct SpGistScanOpaqueData
 	/* Index quals to be passed to opclass (null-related quals removed) */
 	int			numberOfKeys;	/* number of index qualifier conditions */
 	ScanKey		keyData;		/* array of index qualifier descriptors */
+	int			numberOfOrderBys;
+	ScanKey		orderByData;
 
 	/* Pre-allocated workspace arrays: */
 	SpGistSearchTreeItem *tmpTreeItem;	/* workspace to pass to rb_insert */

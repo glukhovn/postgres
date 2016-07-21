@@ -30,9 +30,8 @@ typedef void (*storeRes_func) (SpGistScanOpaque so, ItemPointer heapPtr,
 							   Datum leafValue, bool isnull, bool recheck);
 
 static void
-spgAddStartItem(IndexScanDesc scan, bool isnull)
+spgAddStartItem(SpGistScanOpaque so, bool isnull)
 {
-	SpGistScanOpaque	 so = (SpGistScanOpaque) scan->opaque;
 	SpGistSearchItem	*startEntry =
 			(SpGistSearchItem *) palloc0(sizeof(SpGistSearchItem));
 
@@ -43,7 +42,7 @@ spgAddStartItem(IndexScanDesc scan, bool isnull)
 	startEntry->level = 0;
 	startEntry->isnull = isnull;
 
-	spgAddSearchItemToQueue(scan, startEntry, so->zeroDistances);
+	spgAddSearchItemToQueue(so, startEntry, so->zeroDistances);
 }
 
 /*
@@ -51,18 +50,17 @@ spgAddStartItem(IndexScanDesc scan, bool isnull)
  * any previously active scan
  */
 static void
-resetSpGistScanOpaque(IndexScanDesc scan)
+resetSpGistScanOpaque(SpGistScanOpaque so)
 {
-	SpGistScanOpaque	so = (SpGistScanOpaque) scan->opaque;
-	MemoryContext	 	oldCtx = MemoryContextSwitchTo(so->queueCxt);
+	MemoryContext oldCtx = MemoryContextSwitchTo(so->queueCxt);
 
 	if (so->searchNulls)
 		/* Add a work item to scan the null index entries */
-		spgAddStartItem(scan, true);
+		spgAddStartItem(so, true);
 
 	if (so->searchNonNulls)
 		/* Add a work item to scan the non-null index entries */
-		spgAddStartItem(scan, false);
+		spgAddStartItem(so, false);
 
 	MemoryContextSwitchTo(oldCtx);
 
@@ -97,6 +95,9 @@ spgPrepareScanKeys(IndexScanDesc scan)
 	bool		haveNotNull;
 	int			nkeys;
 	int			i;
+
+	so->numberOfOrderBys = scan->numberOfOrderBys;
+	so->orderByData = scan->orderByData;
 
 	if (scan->numberOfKeys <= 0)
 	{
@@ -209,6 +210,10 @@ spgrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 		memmove(scan->keyData, scankey,
 				scan->numberOfKeys * sizeof(ScanKeyData));
 
+	if (orderbys && scan->numberOfOrderBys > 0)
+		memmove(scan->orderByData, orderbys,
+				scan->numberOfOrderBys * sizeof(ScanKeyData));
+
 	/* preprocess scankeys, set up the representation in *so */
 	spgPrepareScanKeys(scan);
 
@@ -224,12 +229,8 @@ spgrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	MemoryContextSwitchTo(oldCxt);
 
 	/* set up starting queue entries */
-	resetSpGistScanOpaque(scan);
+	resetSpGistScanOpaque(so);
 	so->curTreeItem = NULL;
-
-	if (orderbys && scan->numberOfOrderBys > 0)
-		memmove(scan->orderByData, orderbys,
-				scan->numberOfOrderBys * sizeof(ScanKeyData));
 }
 
 void
@@ -255,13 +256,12 @@ spgendscan(IndexScanDesc scan)
  *		the scan is not ordered AND the item satisfies the scankeys
  */
 static bool
-spgLeafTest(Relation index, IndexScanDesc scan,
+spgLeafTest(Relation index, SpGistScanOpaque so,
 			SpGistLeafTuple leafTuple, bool isnull,
 			int level, Datum reconstructedValue,
 			void *traversalValue,
 			bool *reportedSome, storeRes_func storeRes)
 {
-	SpGistScanOpaque		so = scan->opaque;
 	spgLeafConsistentIn		in;
 	spgLeafConsistentOut	out;
 	FmgrInfo			   *procinfo;
@@ -288,13 +288,13 @@ spgLeafTest(Relation index, IndexScanDesc scan,
 
 	in.scankeys = so->keyData;
 	in.nkeys = so->numberOfKeys;
+	in.orderbykeys = so->orderByData;
+	in.norderbys = so->numberOfOrderBys;
 	in.reconstructedValue = reconstructedValue;
 	in.traversalValue = traversalValue;
 	in.level = level;
 	in.returnData = so->want_itup;
 	in.leafDatum = leafDatum;
-	in.orderbykeys = scan->orderByData;
-	in.norderbys = scan->numberOfOrderBys;
 
 	out.leafValue = (Datum) 0;
 	out.recheck = false;
@@ -314,13 +314,13 @@ report:
 	if (result)
 	{
 		/* item passes the scankeys */
-		if (scan->numberOfOrderBys > 0)
+		if (so->numberOfOrderBys > 0)
 		{
 			/* the scan is ordered -> add the item to the queue */
 			MemoryContext oldCxt = MemoryContextSwitchTo(so->queueCxt);
 
 			spgAddSearchItemToQueue(
-				scan,
+				so,
 				spgNewHeapItem(so, level, leafTuple->heapPtr, leafValue,
 							   recheck, isnull),
 				/* Assume that all distances for null entries are infinities */
@@ -341,16 +341,17 @@ report:
 
 /* A bundle initializer for inner_consistent methods */
 static void
-spgInitInnerConsistentIn(spgInnerConsistentIn *in, IndexScanDesc scan,
+spgInitInnerConsistentIn(spgInnerConsistentIn *in,
+						 SpGistScanOpaque so,
 						 SpGistSearchItem *item,
-						 SpGistInnerTuple innerTuple,
-						 MemoryContext traversalMemoryContext)
+						 SpGistInnerTuple innerTuple)
 {
-	SpGistScanOpaque so = scan->opaque;
 	in->scankeys = so->keyData;
 	in->nkeys = so->numberOfKeys;
+	in->norderbys = so->numberOfOrderBys;
+	in->orderbyKeys = so->orderByData;
 	in->reconstructedValue = item->value;
-	in->traversalMemoryContext = traversalMemoryContext;
+	in->traversalMemoryContext = so->traversalCxt;
 	in->traversalValue = item->traversalValue;
 	in->level = item->level;
 	in->returnData = so->want_itup;
@@ -359,8 +360,6 @@ spgInitInnerConsistentIn(spgInnerConsistentIn *in, IndexScanDesc scan,
 	in->prefixDatum = SGITDATUM(innerTuple, &so->state);
 	in->nNodes = innerTuple->nNodes;
 	in->nodeLabels = spgExtractNodeLabels(&so->state, innerTuple);
-	in->norderbys = scan->numberOfOrderBys;
-	in->orderbyKeys = scan->orderByData;
 }
 
 static SpGistSearchItem *
@@ -397,10 +396,9 @@ spgMakeInnerItem(SpGistScanOpaque so,
 }
 
 static void
-spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
+spgInnerTest(Relation index, SpGistScanOpaque so, SpGistSearchItem *item,
 			 SpGistInnerTuple innerTuple, bool isnull)
 {
-	SpGistScanOpaque		so = scan->opaque;
 	MemoryContext			oldCxt = MemoryContextSwitchTo(so->tempCxt);
 	spgInnerConsistentIn	in;
 	spgInnerConsistentOut	out;
@@ -408,7 +406,7 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 	SpGistNodeTuple			node;
 	int						i;
 
-	spgInitInnerConsistentIn(&in, scan, item, innerTuple, so->traversalCxt);
+	spgInitInnerConsistentIn(&in, so, item, innerTuple);
 
 	memset(&out, 0, sizeof(out));
 
@@ -461,7 +459,7 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 		if (ItemPointerIsValid(&nodes[nodeN]->t_tid))
 			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
 			spgAddSearchItemToQueue(
-					scan,
+					so,
 					spgMakeInnerItem(so, item, nodes[nodeN], &out, i, isnull),
 					out.distances ? out.distances[i] : so->infDistances);
 	}
@@ -515,7 +513,7 @@ enum SpGistSpecialOffsetNumbers
 };
 
 static OffsetNumber
-spgTestLeafTuple(Relation index, IndexScanDesc scan,
+spgTestLeafTuple(Relation index, SpGistScanOpaque so,
 				 Page page, OffsetNumber offset,
 				 SpGistSearchItem *item,
 				 bool isnull, bool isroot,
@@ -556,7 +554,7 @@ spgTestLeafTuple(Relation index, IndexScanDesc scan,
 
 	Assert(ItemPointerIsValid(&leafTuple->heapPtr));
 
-	spgLeafTest(index, scan, leafTuple, isnull, item->level,
+	spgLeafTest(index, so, leafTuple, isnull, item->level,
 				item->value, item->traversalValue,
 				reportedSome, storeRes);
 
@@ -571,12 +569,11 @@ spgTestLeafTuple(Relation index, IndexScanDesc scan,
  * next page boundary once we have reported at least one tuple.
  */
 static void
-spgWalk(Relation index, IndexScanDesc scan, bool scanWholeIndex,
+spgWalk(Relation index, SpGistScanOpaque so, bool scanWholeIndex,
 		storeRes_func storeRes, Snapshot snapshot)
 {
 	Buffer		buffer = InvalidBuffer;
 	bool		reportedSome = false;
-	SpGistScanOpaque so = (SpGistScanOpaque) scan->opaque;
 
 	while (scanWholeIndex || !reportedSome)
 	{
@@ -592,7 +589,7 @@ redirect:
 		if (SPGISTSearchItemIsHeap(*item))
 		{
 			/* We store heap items in the queue only in case of ordered search */
-			Assert(scan->numberOfOrderBys > 0);
+			Assert(so->numberOfOrderBys > 0);
 			storeRes(so, &item->heap, item->value, item->isnull,
 					 item->itemState == HEAP_RECHECK);
 			reportedSome = true;
@@ -632,7 +629,7 @@ redirect:
 				{
 					/* When root is a leaf, examine all its tuples */
 					for (offset = FirstOffsetNumber; offset <= max; offset++)
-						(void) spgTestLeafTuple(index, scan, page, offset,
+						(void) spgTestLeafTuple(index, so, page, offset,
 												item, isnull, true,
 												&reportedSome, storeRes);
 				}
@@ -642,7 +639,7 @@ redirect:
 					while (offset != InvalidOffsetNumber)
 					{
 						Assert(offset >= FirstOffsetNumber && offset <= max);
-						offset = spgTestLeafTuple(index, scan, page, offset,
+						offset = spgTestLeafTuple(index, so, page, offset,
 												  item, isnull, false,
 												  &reportedSome, storeRes);
 						if (offset == SpGistRedirectOffsetNumber)
@@ -669,7 +666,7 @@ redirect:
 						 innerTuple->tupstate);
 				}
 
-				spgInnerTest(index, scan, item, innerTuple, isnull);
+				spgInnerTest(index, so, item, innerTuple, isnull);
 			}
 		}
 
@@ -704,7 +701,7 @@ spggetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 	so->tbm = tbm;
 	so->ntids = 0;
 
-	spgWalk(scan->indexRelation, scan, true, storeBitmap, scan->xs_snapshot);
+	spgWalk(scan->indexRelation, so, true, storeBitmap, scan->xs_snapshot);
 
 	return so->ntids;
 }
@@ -764,7 +761,7 @@ spggettuple(IndexScanDesc scan, ScanDirection dir)
 		}
 		so->iPtr = so->nPtrs = 0;
 
-		spgWalk(scan->indexRelation, scan, false, storeGettuple,
+		spgWalk(scan->indexRelation, so, false, storeGettuple,
 				scan->xs_snapshot);
 
 		if (so->nPtrs == 0)
