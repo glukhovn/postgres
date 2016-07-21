@@ -263,53 +263,54 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			SpGistLeafTuple leafTuple, bool isnull,
 			bool *reportedSome, storeRes_func storeRes)
 {
-	spgLeafConsistentIn		in;
-	spgLeafConsistentOut	out;
-	MemoryContext			oldCtx;
-	Datum					leafDatum;
-	Datum					leafValue;
-	bool					result;
-	bool					recheck;
+	Datum		leafValue;
+	double	   *distances;
+	bool		result;
+	bool		recheck;
 
 	if (isnull)
 	{
 		/* Should not have arrived on a nulls page unless nulls are wanted */
 		Assert(so->searchNulls);
 		leafValue = (Datum) 0;
+		/* Assume that all distances for null entries are infinities */
+		distances = so->infDistances;
 		recheck = false;
 		result = true;
-		goto report;
+	}
+	else
+	{
+		spgLeafConsistentIn in;
+		spgLeafConsistentOut out;
+
+		/* use temp context for calling leaf_consistent */
+		MemoryContext oldCxt = MemoryContextSwitchTo(so->tempCxt);
+
+		in.scankeys = so->keyData;
+		in.nkeys = so->numberOfKeys;
+		in.orderbykeys = so->orderByData;
+		in.norderbys = so->numberOfOrderBys;
+		in.reconstructedValue = item->value;
+		in.traversalValue = item->traversalValue;
+		in.level = item->level;
+		in.returnData = so->want_itup;
+		in.leafDatum = SGLTDATUM(leafTuple, &so->state);
+
+		out.leafValue = (Datum) 0;
+		out.recheck = false;
+		out.distances = NULL;
+
+		result = DatumGetBool(FunctionCall2Coll(&so->leafConsistentFn,
+												so->indexCollation,
+												PointerGetDatum(&in),
+												PointerGetDatum(&out)));
+		recheck = out.recheck;
+		leafValue = out.leafValue;
+		distances = out.distances;
+
+		MemoryContextSwitchTo(oldCxt);
 	}
 
-	/* use temp context for calling leaf_consistent */
-	oldCtx = MemoryContextSwitchTo(so->tempCxt);
-
-	leafDatum = SGLTDATUM(leafTuple, &so->state);
-
-	in.scankeys = so->keyData;
-	in.nkeys = so->numberOfKeys;
-	in.orderbykeys = so->orderByData;
-	in.norderbys = so->numberOfOrderBys;
-	in.reconstructedValue = item->value;
-	in.traversalValue = item->traversalValue;
-	in.level = item->level;
-	in.returnData = so->want_itup;
-	in.leafDatum = leafDatum;
-
-	out.leafValue = (Datum) 0;
-	out.recheck = false;
-	out.distances = NULL;
-
-	result = DatumGetBool(FunctionCall2Coll(&so->leafConsistentFn,
-											so->indexCollation,
-											PointerGetDatum(&in),
-											PointerGetDatum(&out)));
-	recheck = out.recheck;
-	leafValue = out.leafValue;
-
-	MemoryContextSwitchTo(oldCtx);
-
-report:
 	if (result)
 	{
 		/* item passes the scankeys */
@@ -322,9 +323,7 @@ report:
 														leafValue, recheck,
 														isnull);
 
-			spgAddSearchItemToQueue(so, heapItem,
-				/* Assume that all distances for null entries are infinities */
-				isnull ? so->infDistances : out.distances);
+			spgAddSearchItemToQueue(so, heapItem, distances);
 
 			MemoryContextSwitchTo(oldCxt);
 		}
@@ -401,34 +400,38 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			 SpGistInnerTuple innerTuple, bool isnull)
 {
 	MemoryContext			oldCxt = MemoryContextSwitchTo(so->tempCxt);
-	spgInnerConsistentIn	in;
 	spgInnerConsistentOut	out;
-	SpGistNodeTuple			*nodes;
+	SpGistNodeTuple		   *nodes;
 	SpGistNodeTuple			node;
+	int						nNodes = innerTuple->nNodes;
 	int						i;
-
-	spgInitInnerConsistentIn(&in, so, item, innerTuple, oldCxt);
 
 	memset(&out, 0, sizeof(out));
 
 	if (!isnull)
+	{
+		spgInnerConsistentIn in;
+
+		spgInitInnerConsistentIn(&in, so, item, innerTuple, oldCxt);
+
 		/* use user-defined inner consistent method */
 		FunctionCall2Coll(&so->innerConsistentFn,
 						  so->indexCollation,
 						  PointerGetDatum(&in),
 						  PointerGetDatum(&out));
+	}
 	else
 	{
 		/* force all children to be visited */
-		out.nNodes = in.nNodes;
-		out.nodeNumbers = (int *) palloc(sizeof(int) * in.nNodes);
-		for (i = 0; i < in.nNodes; i++)
+		out.nNodes = nNodes;
+		out.nodeNumbers = (int *) palloc(sizeof(int) * nNodes);
+		for (i = 0; i < nNodes; i++)
 			out.nodeNumbers[i] = i;
 	}
 
 	/* If allTheSame, they should all or none of 'em match */
 	if (innerTuple->allTheSame)
-		if (out.nNodes != 0 && out.nNodes != in.nNodes)
+		if (out.nNodes != 0 && out.nNodes != nNodes)
 			elog(ERROR, "inconsistent inner_consistent results for allTheSame inner tuple");
 
 	if (!out.nNodes)
@@ -438,7 +441,7 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 	}
 
 	/* collect node pointers */
-	nodes = (SpGistNodeTuple *) palloc(sizeof(SpGistNodeTuple) * in.nNodes);
+	nodes = (SpGistNodeTuple *) palloc(sizeof(SpGistNodeTuple) * nNodes);
 
 	SGITITERATE(innerTuple, i, node)
 	{
@@ -451,7 +454,7 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 	{
 		int			nodeN = out.nodeNumbers[i];
 
-		Assert(nodeN >= 0 && nodeN < in.nNodes);
+		Assert(nodeN >= 0 && nodeN < nNodes);
 
 		if (ItemPointerIsValid(&nodes[nodeN]->t_tid))
 			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
