@@ -507,6 +507,62 @@ spgGetNextQueueItem(SpGistScanOpaque so)
 	return item;
 }
 
+enum SpGistSpecialOffsetNumbers
+{
+	SpGistBreakOffsetNumber = InvalidOffsetNumber,
+	SpGistRedirectOffsetNumber = MaxOffsetNumber + 1,
+	SpGistErrorOffsetNumber = MaxOffsetNumber + 2
+};
+
+static OffsetNumber
+spgTestLeafTuple(Relation index, IndexScanDesc scan,
+				 Page page, OffsetNumber offset,
+				 SpGistSearchItem *item,
+				 bool isnull, bool isroot,
+				 bool *reportedSome,
+				 storeRes_func storeRes)
+{
+	SpGistLeafTuple leafTuple = (SpGistLeafTuple)
+		PageGetItem(page, PageGetItemId(page, offset));
+
+	if (leafTuple->tupstate != SPGIST_LIVE)
+	{
+		if (!isroot) /* all tuples on root should be live */
+		{
+			if (leafTuple->tupstate == SPGIST_REDIRECT)
+			{
+				/* redirection tuple should be first in chain */
+				Assert(offset == ItemPointerGetOffsetNumber(&item->heap));
+				/* transfer attention to redirect point */
+				item->heap = ((SpGistDeadTuple) leafTuple)->pointer;
+				Assert(ItemPointerGetBlockNumber(&item->heap) != SPGIST_METAPAGE_BLKNO);
+				return SpGistRedirectOffsetNumber;
+			}
+
+			if (leafTuple->tupstate == SPGIST_DEAD)
+			{
+				/* dead tuple should be first in chain */
+				Assert(offset == ItemPointerGetOffsetNumber(&item->heap));
+				/* No live entries on this page */
+				Assert(leafTuple->nextOffset == InvalidOffsetNumber);
+				return SpGistBreakOffsetNumber;
+			}
+		}
+
+		/* We should not arrive at a placeholder */
+		elog(ERROR, "unexpected SPGiST tuple state: %d", leafTuple->tupstate);
+		return SpGistErrorOffsetNumber;
+	}
+
+	Assert(ItemPointerIsValid(&leafTuple->heapPtr));
+
+	spgLeafTest(index, scan, leafTuple, isnull, item->level,
+				item->value, item->traversalValue,
+				reportedSome, storeRes);
+
+	return leafTuple->nextOffset;
+}
+
 /*
  * Walk the tree and report all tuples passing the scan quals to the storeRes
  * subroutine.
@@ -570,28 +626,15 @@ redirect:
 			if (SpGistPageIsLeaf(page))
 			{
 				/* Page is a leaf - that is, all it's tuples are heap items */
-				SpGistLeafTuple leafTuple;
 				OffsetNumber max = PageGetMaxOffsetNumber(page);
 
 				if (SpGistBlockIsRoot(blkno))
 				{
 					/* When root is a leaf, examine all its tuples */
 					for (offset = FirstOffsetNumber; offset <= max; offset++)
-					{
-						leafTuple = (SpGistLeafTuple)
-							PageGetItem(page, PageGetItemId(page, offset));
-						if (leafTuple->tupstate != SPGIST_LIVE)
-						{
-							/* all tuples on root should be live */
-							elog(ERROR, "unexpected SPGiST tuple state: %d",
-									leafTuple->tupstate);
-						}
-
-						Assert(ItemPointerIsValid(&leafTuple->heapPtr));
-						spgLeafTest(index, scan, leafTuple, isnull, item->level,
-								item->value, item->traversalValue,
-								&reportedSome, storeRes);
-					}
+						(void) spgTestLeafTuple(index, scan, page, offset,
+												item, isnull, true,
+												&reportedSome, storeRes);
 				}
 				else
 				{
@@ -599,37 +642,11 @@ redirect:
 					while (offset != InvalidOffsetNumber)
 					{
 						Assert(offset >= FirstOffsetNumber && offset <= max);
-						leafTuple = (SpGistLeafTuple)
-							PageGetItem(page, PageGetItemId(page, offset));
-						if (leafTuple->tupstate != SPGIST_LIVE)
-						{
-							if (leafTuple->tupstate == SPGIST_REDIRECT)
-							{
-								/* redirection tuple should be first in chain */
-								Assert(offset == ItemPointerGetOffsetNumber(&item->heap));
-								/* transfer attention to redirect point */
-								item->heap = ((SpGistDeadTuple) leafTuple)->pointer;
-								Assert(ItemPointerGetBlockNumber(&item->heap) != SPGIST_METAPAGE_BLKNO);
-								goto redirect;
-							}
-							if (leafTuple->tupstate == SPGIST_DEAD)
-							{
-								/* dead tuple should be first in chain */
-								Assert(offset == ItemPointerGetOffsetNumber(&item->heap));
-								/* No live entries on this page */
-								Assert(leafTuple->nextOffset == InvalidOffsetNumber);
-								break;
-							}
-							/* We should not arrive at a placeholder */
-							elog(ERROR, "unexpected SPGiST tuple state: %d",
-									leafTuple->tupstate);
-						}
-
-						Assert(ItemPointerIsValid(&leafTuple->heapPtr));
-						spgLeafTest(index, scan, leafTuple, isnull, item->level,
-								item->value, item->traversalValue,
-								&reportedSome, storeRes);
-						offset = leafTuple->nextOffset;
+						offset = spgTestLeafTuple(index, scan, page, offset,
+												  item, isnull, false,
+												  &reportedSome, storeRes);
+						if (offset == SpGistRedirectOffsetNumber)
+							goto redirect;
 					}
 				}
 			}
