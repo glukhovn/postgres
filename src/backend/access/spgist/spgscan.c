@@ -264,9 +264,6 @@ spgLeafTest(Relation index, IndexScanDesc scan,
 	bool					result;
 	bool					recheck;
 
-	/* use temp context for calling leaf_consistent */
-	oldCtx = MemoryContextSwitchTo(so->tempCxt);
-
 	if (isnull)
 	{
 		/* Should not have arrived on a nulls page unless nulls are wanted */
@@ -276,6 +273,9 @@ spgLeafTest(Relation index, IndexScanDesc scan,
 		result = true;
 		goto report;
 	}
+
+	/* use temp context for calling leaf_consistent */
+	oldCtx = MemoryContextSwitchTo(so->tempCxt);
 
 	leafDatum = SGLTDATUM(leafTuple, &so->state);
 
@@ -301,6 +301,8 @@ spgLeafTest(Relation index, IndexScanDesc scan,
 	recheck = out.recheck;
 	leafValue = out.leafValue;
 
+	MemoryContextSwitchTo(oldCtx);
+
 report:
 	if (result)
 	{
@@ -308,23 +310,24 @@ report:
 		if (scan->numberOfOrderBys > 0)
 		{
 			/* the scan is ordered -> add the item to the queue */
-			MemoryContextSwitchTo(so->queueCxt);
+			MemoryContext oldCxt = MemoryContextSwitchTo(so->queueCxt);
+
 			spgAddSearchItemToQueue(
 				scan,
 				spgNewHeapItem(so, level, leafTuple->heapPtr, leafValue,
 							   recheck, isnull),
 				/* Assume that all distances for null entries are infinities */
 				isnull ? so->infDistances : out.distances);
+
+			MemoryContextSwitchTo(oldCxt);
 		}
 		else
 		{
 			/* non-ordered scan, so report the item right away */
-			MemoryContextSwitchTo(oldCtx);
 			storeRes(so, &leafTuple->heapPtr, leafValue, isnull, recheck);
 			*reportedSome = true;
 		}
 	}
-	MemoryContextSwitchTo(oldCtx);
 
 	return result;
 }
