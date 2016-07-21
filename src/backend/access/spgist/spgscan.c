@@ -363,6 +363,39 @@ spgInitInnerConsistentIn(spgInnerConsistentIn *in, IndexScanDesc scan,
 	in->orderbyKeys = scan->orderByData;
 }
 
+static SpGistSearchItem *
+spgMakeInnerItem(SpGistScanOpaque so,
+				 SpGistSearchItem *parentItem,
+				 SpGistNodeTuple tuple,
+				 spgInnerConsistentOut *out, int i, bool isnull)
+{
+	SpGistSearchItem *item = palloc(sizeof(SpGistSearchItem));
+
+	item->heap = tuple->t_tid;
+	item->level = out->levelAdds ? parentItem->level + out->levelAdds[i]
+								 : parentItem->level;
+
+	/* Must copy value out of temp context */
+	item->value = out->reconstructedValues
+					? datumCopy(out->reconstructedValues[i],
+								so->state.attLeafType.attbyval,
+								so->state.attLeafType.attlen)
+					: (Datum) 0;
+
+	/*
+	 * Elements of out.traversalValues should be allocated in
+	 * in.traversalMemoryContext, which is actually a long
+	 * lived context of index scan.
+	 */
+	item->traversalValue =
+			out->traversalValues ? out->traversalValues[i] : NULL;
+
+	item->itemState = INNER;
+	item->isnull = isnull;
+
+	return item;
+}
+
 static void
 spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 			 SpGistInnerTuple innerTuple, bool isnull)
@@ -417,38 +450,13 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 		int			nodeN = out.nodeNumbers[i];
 
 		Assert(nodeN >= 0 && nodeN < in.nNodes);
+
 		if (ItemPointerIsValid(&nodes[nodeN]->t_tid))
-		{
-			double *distances;
-			SpGistSearchItem *newItem;
-
-			/* Create new work item for this node */
-			newItem = palloc(sizeof(SpGistSearchItem));
-			newItem->heap = nodes[nodeN]->t_tid;
-			newItem->level = out.levelAdds ? item->level + out.levelAdds[i]
-										   : item->level;
-
-			/* Must copy value out of temp context */
-			newItem->value = out.reconstructedValues ?
-					datumCopy(out.reconstructedValues[i],
-							  so->state.attLeafType.attbyval,
-							  so->state.attLeafType.attlen) : (Datum) 0;
-
-			/*
-			 * Elements of out.traversalValues should be allocated in
-			 * in.traversalMemoryContext, which is actually a long
-			 * lived context of index scan.
-			 */
-			newItem->traversalValue = (out.traversalValues) ?
-					out.traversalValues[i] : NULL;
-
 			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
-			distances = out.distances ? out.distances[i] : so->infDistances;
-
-			newItem->itemState = INNER;
-			newItem->isnull = isnull;
-			spgAddSearchItemToQueue(scan, newItem, distances);
-		}
+			spgAddSearchItemToQueue(
+					scan,
+					spgMakeInnerItem(so, item, nodes[nodeN], &out, i, isnull),
+					out.distances ? out.distances[i] : so->infDistances);
 	}
 
 	MemoryContextSwitchTo(oldCxt);
