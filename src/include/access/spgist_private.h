@@ -182,7 +182,8 @@ typedef struct SpGistScanOpaqueData
 
 	/* Pre-allocated workspace arrays: */
 	SpGistSearchTreeItem *tmpTreeItem;	/* workspace to pass to rb_insert */
-	double	   *distances;		/* output area for gistindex_keytest */
+	double	   *zeroDistances;
+	double	   *infDistances;
 
 	/* These fields are only used in amgetbitmap scans: */
 	TIDBitmap  *tbm;			/* bitmap being filled */

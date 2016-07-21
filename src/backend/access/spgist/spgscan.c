@@ -43,7 +43,7 @@ spgAddStartItem(IndexScanDesc scan, bool isnull)
 	startEntry->level = 0;
 	startEntry->isnull = isnull;
 
-	spgAddSearchItemToQueue(scan, startEntry, so->distances);
+	spgAddSearchItemToQueue(scan, startEntry, so->zeroDistances);
 }
 
 /*
@@ -55,8 +55,6 @@ resetSpGistScanOpaque(IndexScanDesc scan)
 {
 	SpGistScanOpaque	so = (SpGistScanOpaque) scan->opaque;
 	MemoryContext	 	oldCtx = MemoryContextSwitchTo(so->queueCxt);
-
-	memset(so->distances, 0, sizeof(double) * scan->numberOfOrderBys);
 
 	if (so->searchNulls)
 		/* Add a work item to scan the null index entries */
@@ -160,6 +158,7 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 {
 	IndexScanDesc scan;
 	SpGistScanOpaque so;
+	int			i;
 
 	scan = RelationGetIndexScan(rel, keysz, orderbysz);
 
@@ -177,7 +176,11 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 	/* Set up indexTupDesc and xs_hitupdesc in case it's an index-only scan */
 	so->indexTupDesc = scan->xs_hitupdesc = RelationGetDescr(rel);
 	so->tmpTreeItem = palloc(SPGISTHDRSZ + sizeof(double) * scan->numberOfOrderBys);
-	so->distances = palloc(sizeof(double) * scan->numberOfOrderBys);
+	so->zeroDistances = (double *) palloc0(sizeof(double) * scan->numberOfOrderBys);
+	so->infDistances = (double *) palloc(sizeof(double) * scan->numberOfOrderBys);
+
+	for (i = 0; i < scan->numberOfOrderBys; i++)
+		so->infDistances[i] = get_float8_infinity();
 
 	so->queueCxt = AllocSetContextCreate(CurrentMemoryContext,
 										 "SP-GiST queue context",
@@ -232,7 +235,10 @@ spgendscan(IndexScanDesc scan)
 	MemoryContextDelete(so->queueCxt);
 	pfree(so->tmpTreeItem);
 	if (scan->numberOfOrderBys > 0)
-		pfree(so->distances);
+	{
+		pfree(so->zeroDistances);
+		pfree(so->infDistances);
+	}
 }
 
 /*
@@ -302,18 +308,13 @@ report:
 		if (scan->numberOfOrderBys > 0)
 		{
 			/* the scan is ordered -> add the item to the queue */
-			if (isnull)
-			{
-				/* Assume that all distances for null entries are infinities */
-				int i;
-				out.distances = palloc(scan->numberOfOrderBys * sizeof(double));
-				for (i = 0; i < scan->numberOfOrderBys; ++i)
-					out.distances[i] = get_float8_infinity();
-			}
 			MemoryContextSwitchTo(so->queueCxt);
-			spgAddSearchItemToQueue(scan,
-				spgNewHeapItem(so, level, leafTuple->heapPtr, leafValue, recheck, isnull), 
-				out.distances);
+			spgAddSearchItemToQueue(
+				scan,
+				spgNewHeapItem(so, level, leafTuple->heapPtr, leafValue,
+							   recheck, isnull),
+				/* Assume that all distances for null entries are infinities */
+				isnull ? so->infDistances : out.distances);
 		}
 		else
 		{
@@ -363,10 +364,6 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 	SpGistNodeTuple			*nodes;
 	SpGistNodeTuple			node;
 	int						i;
-	double					*inf_distances = palloc(scan->numberOfOrderBys * sizeof (double));
-
-	for (i = 0; i < scan->numberOfOrderBys; ++i)
-		inf_distances[i] = get_float8_infinity();
 
 	spgInitInnerConsistentIn(&in, scan, item, innerTuple, oldCxt);
 
@@ -436,7 +433,7 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 					out.traversalValues[i] : NULL;
 
 			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
-			distances = out.distances ? out.distances[i] : inf_distances;
+			distances = out.distances ? out.distances[i] : so->infDistances;
 
 			newItem->itemState = INNER;
 			newItem->isnull = isnull;
