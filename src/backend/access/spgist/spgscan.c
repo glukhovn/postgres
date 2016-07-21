@@ -187,6 +187,16 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 										 "SP-GiST queue context",
 										 ALLOCSET_DEFAULT_SIZES);
 
+	fmgr_info_copy(&so->innerConsistentFn,
+				   index_getprocinfo(rel, 1, SPGIST_INNER_CONSISTENT_PROC),
+				   CurrentMemoryContext);
+
+	fmgr_info_copy(&so->leafConsistentFn,
+				   index_getprocinfo(rel, 1, SPGIST_LEAF_CONSISTENT_PROC),
+				   CurrentMemoryContext);
+
+	so->indexCollation = rel->rd_indcollation[0];
+
 	scan->opaque = so;
 
 	return scan;
@@ -249,7 +259,7 @@ spgendscan(IndexScanDesc scan)
  *		the scan is not ordered AND the item satisfies the scankeys
  */
 static bool
-spgLeafTest(Relation index, SpGistScanOpaque so,
+spgLeafTest(SpGistScanOpaque so,
 			SpGistLeafTuple leafTuple, bool isnull,
 			int level, Datum reconstructedValue,
 			void *traversalValue,
@@ -257,7 +267,6 @@ spgLeafTest(Relation index, SpGistScanOpaque so,
 {
 	spgLeafConsistentIn		in;
 	spgLeafConsistentOut	out;
-	FmgrInfo			   *procinfo;
 	MemoryContext			oldCtx;
 	Datum					leafDatum;
 	Datum					leafValue;
@@ -293,9 +302,8 @@ spgLeafTest(Relation index, SpGistScanOpaque so,
 	out.recheck = false;
 	out.distances = NULL;
 
-	procinfo = index_getprocinfo(index, 1, SPGIST_LEAF_CONSISTENT_PROC);
-	result = DatumGetBool(FunctionCall2Coll(procinfo,
-											index->rd_indcollation[0],
+	result = DatumGetBool(FunctionCall2Coll(&so->leafConsistentFn,
+											so->indexCollation,
 											PointerGetDatum(&in),
 											PointerGetDatum(&out)));
 	recheck = out.recheck;
@@ -390,7 +398,7 @@ spgMakeInnerItem(SpGistScanOpaque so,
 }
 
 static void
-spgInnerTest(Relation index, SpGistScanOpaque so, SpGistSearchItem *item,
+spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			 SpGistInnerTuple innerTuple, bool isnull)
 {
 	MemoryContext			oldCxt = MemoryContextSwitchTo(so->tempCxt);
@@ -405,15 +413,11 @@ spgInnerTest(Relation index, SpGistScanOpaque so, SpGistSearchItem *item,
 	memset(&out, 0, sizeof(out));
 
 	if (!isnull)
-	{
 		/* use user-defined inner consistent method */
-		FmgrInfo *consistent_procinfo =
-				index_getprocinfo(index, 1, SPGIST_INNER_CONSISTENT_PROC);
-		FunctionCall2Coll(consistent_procinfo,
-						  index->rd_indcollation[0],
+		FunctionCall2Coll(&so->innerConsistentFn,
+						  so->indexCollation,
 						  PointerGetDatum(&in),
 						  PointerGetDatum(&out));
-	}
 	else
 	{
 		/* force all children to be visited */
@@ -507,9 +511,9 @@ enum SpGistSpecialOffsetNumbers
 };
 
 static OffsetNumber
-spgTestLeafTuple(Relation index, SpGistScanOpaque so,
-				 Page page, OffsetNumber offset,
+spgTestLeafTuple(SpGistScanOpaque so,
 				 SpGistSearchItem *item,
+				 Page page, OffsetNumber offset,
 				 bool isnull, bool isroot,
 				 bool *reportedSome,
 				 storeRes_func storeRes)
@@ -548,7 +552,7 @@ spgTestLeafTuple(Relation index, SpGistScanOpaque so,
 
 	Assert(ItemPointerIsValid(&leafTuple->heapPtr));
 
-	spgLeafTest(index, so, leafTuple, isnull, item->level,
+	spgLeafTest(so, leafTuple, isnull, item->level,
 				item->value, item->traversalValue,
 				reportedSome, storeRes);
 
@@ -623,8 +627,8 @@ redirect:
 				{
 					/* When root is a leaf, examine all its tuples */
 					for (offset = FirstOffsetNumber; offset <= max; offset++)
-						(void) spgTestLeafTuple(index, so, page, offset,
-												item, isnull, true,
+						(void) spgTestLeafTuple(so, item, page, offset,
+												isnull, true,
 												&reportedSome, storeRes);
 				}
 				else
@@ -633,8 +637,8 @@ redirect:
 					while (offset != InvalidOffsetNumber)
 					{
 						Assert(offset >= FirstOffsetNumber && offset <= max);
-						offset = spgTestLeafTuple(index, so, page, offset,
-												  item, isnull, false,
+						offset = spgTestLeafTuple(so, item, page, offset,
+												  isnull, false,
 												  &reportedSome, storeRes);
 						if (offset == SpGistRedirectOffsetNumber)
 							goto redirect;
@@ -660,7 +664,7 @@ redirect:
 						 innerTuple->tupstate);
 				}
 
-				spgInnerTest(index, so, item, innerTuple, isnull);
+				spgInnerTest(so, item, innerTuple, isnull);
 			}
 		}
 

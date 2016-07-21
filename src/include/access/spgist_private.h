@@ -182,6 +182,10 @@ typedef struct SpGistScanOpaqueData
 	int			numberOfOrderBys;
 	ScanKey		orderByData;
 
+	FmgrInfo	innerConsistentFn;
+	FmgrInfo	leafConsistentFn;
+	Oid			indexCollation;
+
 	/* Pre-allocated workspace arrays: */
 	SpGistSearchTreeItem *tmpTreeItem;	/* workspace to pass to rb_insert */
 	double	   *zeroDistances;
