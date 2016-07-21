@@ -259,10 +259,8 @@ spgendscan(IndexScanDesc scan)
  *		the scan is not ordered AND the item satisfies the scankeys
  */
 static bool
-spgLeafTest(SpGistScanOpaque so,
+spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			SpGistLeafTuple leafTuple, bool isnull,
-			int level, Datum reconstructedValue,
-			void *traversalValue,
 			bool *reportedSome, storeRes_func storeRes)
 {
 	spgLeafConsistentIn		in;
@@ -292,9 +290,9 @@ spgLeafTest(SpGistScanOpaque so,
 	in.nkeys = so->numberOfKeys;
 	in.orderbykeys = so->orderByData;
 	in.norderbys = so->numberOfOrderBys;
-	in.reconstructedValue = reconstructedValue;
-	in.traversalValue = traversalValue;
-	in.level = level;
+	in.reconstructedValue = item->value;
+	in.traversalValue = item->traversalValue;
+	in.level = item->level;
 	in.returnData = so->want_itup;
 	in.leafDatum = leafDatum;
 
@@ -319,11 +317,12 @@ report:
 		{
 			/* the scan is ordered -> add the item to the queue */
 			MemoryContext oldCxt = MemoryContextSwitchTo(so->queueCxt);
+			SpGistSearchItem *heapItem = spgNewHeapItem(so, item->level,
+														leafTuple->heapPtr,
+														leafValue, recheck,
+														isnull);
 
-			spgAddSearchItemToQueue(
-				so,
-				spgNewHeapItem(so, level, leafTuple->heapPtr, leafValue,
-							   recheck, isnull),
+			spgAddSearchItemToQueue(so, heapItem,
 				/* Assume that all distances for null entries are infinities */
 				isnull ? so->infDistances : out.distances);
 
@@ -552,9 +551,7 @@ spgTestLeafTuple(SpGistScanOpaque so,
 
 	Assert(ItemPointerIsValid(&leafTuple->heapPtr));
 
-	spgLeafTest(so, leafTuple, isnull, item->level,
-				item->value, item->traversalValue,
-				reportedSome, storeRes);
+	spgLeafTest(so, item, leafTuple, isnull, reportedSome, storeRes);
 
 	return leafTuple->nextOffset;
 }
