@@ -403,13 +403,6 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 
 	spgInitInnerConsistentIn(&in, scan, item, innerTuple, oldCxt);
 
-	/* collect node pointers */
-	nodes = (SpGistNodeTuple *) palloc(sizeof(SpGistNodeTuple) * in.nNodes);
-	SGITITERATE(innerTuple, i, node)
-	{
-		nodes[i] = node;
-	}
-
 	memset(&out, 0, sizeof(out));
 
 	if (!isnull)
@@ -431,12 +424,26 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 			out.nodeNumbers[i] = i;
 	}
 
-	MemoryContextSwitchTo(so->queueCxt);
-
 	/* If allTheSame, they should all or none of 'em match */
 	if (innerTuple->allTheSame)
 		if (out.nNodes != 0 && out.nNodes != in.nNodes)
 			elog(ERROR, "inconsistent inner_consistent results for allTheSame inner tuple");
+
+	if (!out.nNodes)
+	{
+		MemoryContextSwitchTo(oldCxt);
+		return;
+	}
+
+	/* collect node pointers */
+	nodes = (SpGistNodeTuple *) palloc(sizeof(SpGistNodeTuple) * in.nNodes);
+
+	SGITITERATE(innerTuple, i, node)
+	{
+		nodes[i] = node;
+	}
+
+	MemoryContextSwitchTo(so->queueCxt);
 
 	for (i = 0; i < out.nNodes; i++)
 	{
