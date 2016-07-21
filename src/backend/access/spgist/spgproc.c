@@ -88,12 +88,12 @@ SpGistSearchTreeItemDeleter(RBNode *rb, void *arg)
  * Called in queue context
  */
 void
-spgAddSearchItemToQueue(IndexScanDesc scan, SpGistSearchItem *item, double *distances)
+spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item,
+						double *distances)
 {
 	bool isNew;
-	SpGistScanOpaque so = (SpGistScanOpaque) scan->opaque;
 	SpGistSearchTreeItem *newItem = so->tmpTreeItem;
-	memcpy(newItem->distances, distances, scan->numberOfOrderBys * sizeof(double));
+	memcpy(newItem->distances, distances, so->numberOfOrderBys * sizeof(double));
 	newItem->head = item;
 	item->next = NULL;
 	newItem->lastHeap = SPGISTSearchItemIsHeap(*item) ? item : NULL;
