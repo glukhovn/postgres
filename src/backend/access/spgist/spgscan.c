@@ -401,8 +401,6 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 {
 	MemoryContext			oldCxt = MemoryContextSwitchTo(so->tempCxt);
 	spgInnerConsistentOut	out;
-	SpGistNodeTuple		   *nodes;
-	SpGistNodeTuple			node;
 	int						nNodes = innerTuple->nNodes;
 	int						i;
 
@@ -434,34 +432,39 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		if (out.nNodes != 0 && out.nNodes != nNodes)
 			elog(ERROR, "inconsistent inner_consistent results for allTheSame inner tuple");
 
-	if (!out.nNodes)
+	if (out.nNodes)
 	{
-		MemoryContextSwitchTo(oldCxt);
-		return;
-	}
+		/* collect node pointers */
+		SpGistNodeTuple		node;
+		SpGistNodeTuple	   *nodes = (SpGistNodeTuple *) palloc(
+									sizeof(SpGistNodeTuple) * nNodes);
 
-	/* collect node pointers */
-	nodes = (SpGistNodeTuple *) palloc(sizeof(SpGistNodeTuple) * nNodes);
+		SGITITERATE(innerTuple, i, node)
+		{
+			nodes[i] = node;
+		}
 
-	SGITITERATE(innerTuple, i, node)
-	{
-		nodes[i] = node;
-	}
+		MemoryContextSwitchTo(so->queueCxt);
 
-	MemoryContextSwitchTo(so->queueCxt);
+		for (i = 0; i < out.nNodes; i++)
+		{
+			int			nodeN = out.nodeNumbers[i];
+			SpGistSearchItem *innerItem;
 
-	for (i = 0; i < out.nNodes; i++)
-	{
-		int			nodeN = out.nodeNumbers[i];
+			Assert(nodeN >= 0 && nodeN < nNodes);
 
-		Assert(nodeN >= 0 && nodeN < nNodes);
+			node = nodes[nodeN];
 
-		if (ItemPointerIsValid(&nodes[nodeN]->t_tid))
+			if (!ItemPointerIsValid(&node->t_tid))
+				continue;
+
+			innerItem = spgMakeInnerItem(so, item, node, &out, i, isnull);
+
 			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
-			spgAddSearchItemToQueue(
-					so,
-					spgMakeInnerItem(so, item, nodes[nodeN], &out, i, isnull),
-					out.distances ? out.distances[i] : so->infDistances);
+			spgAddSearchItemToQueue(so, innerItem,
+									out.distances ? out.distances[i]
+												  : so->infDistances);
+		}
 	}
 
 	MemoryContextSwitchTo(oldCxt);
