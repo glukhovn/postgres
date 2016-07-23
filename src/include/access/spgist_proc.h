@@ -12,19 +12,8 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
-#define SPGISTHDRSZ offsetof(SpGistSearchTreeItem, distances)
 #define SPGISTSearchItemIsHeap(item)	((item).itemState == HEAP_RECHECK \
 									  || (item).itemState == HEAP_NORECHECK)
-
-extern int SpGistSearchTreeItemComparator(const RBNode *a, const RBNode *b, void *arg);
-
-extern void SpGistSearchTreeItemCombiner(RBNode *existing, const RBNode *newrb, void *arg);
-
-#define GSTIHDRSZ offsetof(SpGistSearchTreeItem, distances)
-
-extern RBNode * SpGistSearchTreeItemAllocator(void *arg);
-
-extern void SpGistSearchTreeItemDeleter(RBNode *rb, void *arg);
 
 extern void spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item, double *distances);
 

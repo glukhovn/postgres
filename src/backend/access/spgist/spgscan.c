@@ -29,11 +29,39 @@
 typedef void (*storeRes_func) (SpGistScanOpaque so, ItemPointer heapPtr,
 							   Datum leafValue, bool isnull, bool recheck);
 
+/*
+ * Pairing heap comparison function for the SpGistSearchItem queue
+ */
+static int
+pairingheap_SpGistSearchItem_cmp(const pairingheap_node *a,
+								 const pairingheap_node *b, void *arg)
+{
+	const SpGistSearchItem *sa = (const SpGistSearchItem *) a;
+	const SpGistSearchItem *sb = (const SpGistSearchItem *) b;
+	IndexScanDesc scan = (IndexScanDesc) arg;
+	int			i;
+
+	/* Order according to distance comparison */
+	for (i = 0; i < scan->numberOfOrderBys; i++)
+	{
+		if (sa->distances[i] != sb->distances[i])
+			return (sa->distances[i] < sb->distances[i]) ? 1 : -1;
+	}
+
+	/* Heap items go before inner pages, to ensure a depth-first search */
+	if (SPGISTSearchItemIsHeap(*sa) && !SPGISTSearchItemIsHeap(*sb))
+		return 1;
+	if (!SPGISTSearchItemIsHeap(*sa) && SPGISTSearchItemIsHeap(*sb))
+		return -1;
+
+	return 0;
+}
+
 static void
 spgAddStartItem(SpGistScanOpaque so, bool isnull)
 {
-	SpGistSearchItem	*startEntry =
-			(SpGistSearchItem *) palloc0(sizeof(SpGistSearchItem));
+	SpGistSearchItem *startEntry = (SpGistSearchItem *) palloc0(
+								SizeOfSpGistSearchItem(so->numberOfOrderBys));
 
 	ItemPointerSet(&startEntry->heap,
 				   isnull ? SPGIST_NULL_BLKNO : SPGIST_ROOT_BLKNO,
@@ -176,7 +204,7 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 
 	/* Set up indexTupDesc and xs_hitupdesc in case it's an index-only scan */
 	so->indexTupDesc = scan->xs_hitupdesc = RelationGetDescr(rel);
-	so->tmpTreeItem = palloc(SPGISTHDRSZ + sizeof(double) * scan->numberOfOrderBys);
+
 	so->zeroDistances = (double *) palloc0(sizeof(double) * scan->numberOfOrderBys);
 	so->infDistances = (double *) palloc(sizeof(double) * scan->numberOfOrderBys);
 
@@ -223,18 +251,11 @@ spgrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 
 	MemoryContextReset(so->queueCxt);
 	oldCxt = MemoryContextSwitchTo(so->queueCxt);
-	so->queue = rb_create(
-			SPGISTHDRSZ + sizeof(double) * scan->numberOfOrderBys,
-			SpGistSearchTreeItemComparator,
-			SpGistSearchTreeItemCombiner,
-			SpGistSearchTreeItemAllocator,
-			SpGistSearchTreeItemDeleter,
-			scan);
+	so->queue = pairingheap_allocate(pairingheap_SpGistSearchItem_cmp, scan);
 	MemoryContextSwitchTo(oldCxt);
 
 	/* set up starting queue entries */
 	resetSpGistScanOpaque(so);
-	so->curTreeItem = NULL;
 }
 
 void
@@ -244,7 +265,7 @@ spgendscan(IndexScanDesc scan)
 
 	MemoryContextDelete(so->tempCxt);
 	MemoryContextDelete(so->queueCxt);
-	pfree(so->tmpTreeItem);
+
 	if (scan->numberOfOrderBys > 0)
 	{
 		pfree(so->zeroDistances);
@@ -368,7 +389,7 @@ spgMakeInnerItem(SpGistScanOpaque so,
 				 SpGistNodeTuple tuple,
 				 spgInnerConsistentOut *out, int i, bool isnull)
 {
-	SpGistSearchItem *item = palloc(sizeof(SpGistSearchItem));
+	SpGistSearchItem *item = palloc(SizeOfSpGistSearchItem(so->numberOfOrderBys));
 
 	item->heap = tuple->t_tid;
 	item->level = out->levelAdds ? parentItem->level + out->levelAdds[i]
@@ -474,37 +495,15 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 static SpGistSearchItem *
 spgGetNextQueueItem(SpGistScanOpaque so)
 {
-	MemoryContext oldCxt = MemoryContextSwitchTo(so->queueCxt);
-	SpGistSearchItem *item = NULL;
+	SpGistSearchItem *item;
 
-	while (item == NULL)
-	{
-		/* Update curTreeItem if we don't have one */
-		if (so->curTreeItem == NULL)
-		{
-			so->curTreeItem = (SpGistSearchTreeItem *) rb_leftmost(so->queue);
-			/* Done when tree is empty */
-			if (so->curTreeItem == NULL)
-				break;
-		}
+	if (!pairingheap_is_empty(so->queue))
+		item = (SpGistSearchItem *) pairingheap_remove_first(so->queue);
+	else
+		/* Done when both heaps are empty */
+		item = NULL;
 
-		item = so->curTreeItem->head;
-		if (item != NULL)
-		{
-			/* Delink item from chain */
-			so->curTreeItem->head = item->next;
-			if (item == so->curTreeItem->lastHeap)
-				so->curTreeItem->lastHeap = NULL;
-		}
-		else
-		{
-			/* curTreeItem is exhausted, so remove it from rbtree */
-			rb_delete(so->queue, (RBNode *) so->curTreeItem);
-			so->curTreeItem = NULL;
-		}
-	}
-
-	MemoryContextSwitchTo(oldCxt);
+	/* Return item; caller is responsible to pfree it */
 	return item;
 }
 

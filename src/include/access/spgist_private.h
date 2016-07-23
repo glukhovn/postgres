@@ -143,23 +143,21 @@ typedef enum SPGistSearchItemState
 
 typedef struct SpGistSearchItem
 {
+	pairingheap_node phNode;	/* pairing heap node */
 	SPGistSearchItemState itemState;	/* see above */
 	Datum		value;			/* value reconstructed from parent or
 								 * leafValue if heaptuple */
 	void	   *traversalValue; /* opclass-specific traverse value */
 	int			level;			/* level of items on this page */
-	struct SpGistSearchItem *next;	  /* list link */
 	ItemPointerData heap;		/* heap info, if heap tuple */
 	bool		isnull;
+
+	/* array with numberOfOrderBys entries */
+	double		distances[FLEXIBLE_ARRAY_MEMBER];
 } SpGistSearchItem;
 
-typedef struct SpGistSearchTreeItem
-{
-	RBNode		rbnode;			/* this is an RBTree item */
-	SpGistSearchItem *head;		/* first chain member */
-	SpGistSearchItem *lastHeap;	/* last heap-tuple member, if any */
-	double		distances[1];	/* array with numberOfOrderBys entries */
-} SpGistSearchTreeItem;
+#define SizeOfSpGistSearchItem(n_distances) \
+	(offsetof(SpGistSearchItem, distances) + sizeof(double) * (n_distances))
 
 /*
  * Private state of an index scan
@@ -167,10 +165,9 @@ typedef struct SpGistSearchTreeItem
 typedef struct SpGistScanOpaqueData
 {
 	SpGistState state;			/* see above */
-	RBTree	   *queue;			/* queue of unvisited items */
+	pairingheap *queue;			/* queue of unvisited items */
 	MemoryContext queueCxt;		/* context holding the queue */
 	MemoryContext tempCxt;		/* short-lived memory context */
-	SpGistSearchTreeItem *curTreeItem;
 
 	/* Control flags showing whether to search nulls and/or non-nulls */
 	bool		searchNulls;	/* scan matches (all) null entries */
@@ -187,7 +184,6 @@ typedef struct SpGistScanOpaqueData
 	Oid			indexCollation;
 
 	/* Pre-allocated workspace arrays: */
-	SpGistSearchTreeItem *tmpTreeItem;	/* workspace to pass to rb_insert */
 	double	   *zeroDistances;
 	double	   *infDistances;
 
