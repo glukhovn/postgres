@@ -19,7 +19,6 @@
 
 #include "access/relscan.h"
 #include "access/spgist_private.h"
-#include "access/spgist_proc.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
@@ -74,6 +73,32 @@ pairingheap_SpGistSearchItem_cmp(const pairingheap_node *a,
 		return -1;
 
 	return 0;
+}
+
+static void
+spgFreeSearchItem(SpGistScanOpaque so, SpGistSearchItem *item)
+{
+	if (!so->state.attLeafType.attbyval &&
+		DatumGetPointer(item->value) != NULL)
+		pfree(DatumGetPointer(item->value));
+
+	if (item->traversalValue)
+		pfree(item->traversalValue);
+
+	pfree(item);
+}
+
+/*
+ * Add SpGistSearchItem to queue
+ *
+ * Called in queue context
+ */
+static void
+spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item,
+						double *distances)
+{
+	memcpy(item->distances, distances, so->numberOfOrderBys * sizeof(double));
+	pairingheap_add(so->queue, &item->phNode);
 }
 
 static void
@@ -297,6 +322,29 @@ spgendscan(IndexScanDesc scan)
 		pfree(so->zeroDistances);
 		pfree(so->infDistances);
 	}
+}
+
+/*
+ * Leaf SpGistSearchItem constructor, called in queue context
+ */
+static SpGistSearchItem *
+spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointerData heapPtr,
+			   Datum leafValue, bool recheck, bool isnull)
+{
+	SpGistSearchItem *item = (SpGistSearchItem *) palloc(
+								SizeOfSpGistSearchItem(so->numberOfOrderBys));
+
+	item->level = level;
+	item->heap = heapPtr;
+	/* copy value to queue cxt out of tmp cxt */
+	item->value = isnull ? (Datum) 0 :
+		datumCopy(leafValue, so->state.attLeafType.attbyval,
+				  so->state.attLeafType.attlen);
+	item->traversalValue = NULL;
+	item->itemState = recheck ? HEAP_RECHECK : HEAP_NORECHECK;
+	item->isnull = isnull;
+
+	return item;
 }
 
 /*
