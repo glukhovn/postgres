@@ -155,7 +155,7 @@ typedef struct SpGistSearchItem
 	double		distances[FLEXIBLE_ARRAY_MEMBER];
 } SpGistSearchItem;
 
-#define SPGISTSearchItemIsHeap(item) 	((item).itemState == HEAP_RECHECK \
+#define SpGistSearchItemIsHeap(item)	((item).itemState == HEAP_RECHECK \
 									  || (item).itemState == HEAP_NORECHECK)
 
 #define SizeOfSpGistSearchItem(n_distances) \
