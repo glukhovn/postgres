@@ -48,9 +48,9 @@ pairingheap_SpGistSearchItem_cmp(const pairingheap_node *a,
 	}
 
 	/* Heap items go before inner pages, to ensure a depth-first search */
-	if (SPGISTSearchItemIsHeap(*sa) && !SPGISTSearchItemIsHeap(*sb))
+	if (SpGistSearchItemIsHeap(*sa) && !SpGistSearchItemIsHeap(*sb))
 		return 1;
-	if (!SPGISTSearchItemIsHeap(*sa) && SPGISTSearchItemIsHeap(*sb))
+	if (!SpGistSearchItemIsHeap(*sa) && SpGistSearchItemIsHeap(*sb))
 		return -1;
 
 	return 0;
@@ -634,7 +634,7 @@ redirect:
 		/* Check for interrupts, just in case of infinite loop */
 		CHECK_FOR_INTERRUPTS();
 
-		if (SPGISTSearchItemIsHeap(*item))
+		if (SpGistSearchItemIsHeap(*item))
 		{
 			/* We store heap items in the queue only in case of ordered search */
 			Assert(so->numberOfOrderBys > 0);
