@@ -3703,8 +3703,8 @@ IteratorConcat(JsonbIterator **it1, JsonbIterator **it2,
 		res = pushJsonbValue(state, WJB_END_ARRAY, NULL /* signal to sort */ );
 	}
 	/* have we got array || object or object || array? */
-	else if (((rk1 == WJB_BEGIN_ARRAY && !(*it1)->isScalar) && rk2 == WJB_BEGIN_OBJECT) ||
-			 (rk1 == WJB_BEGIN_OBJECT && (rk2 == WJB_BEGIN_ARRAY && !(*it2)->isScalar)))
+	else if (((rk1 == WJB_BEGIN_ARRAY && !v1.val.array.rawScalar) && rk2 == WJB_BEGIN_OBJECT) ||
+			 (rk1 == WJB_BEGIN_OBJECT && (rk2 == WJB_BEGIN_ARRAY && !v2.val.array.rawScalar)))
 	{
 
 		JsonbIterator **it_array = rk1 == WJB_BEGIN_ARRAY ? it1 : it2;
