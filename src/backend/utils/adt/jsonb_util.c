@@ -13,7 +13,9 @@
  */
 #include "postgres.h"
 
+#include "access/compression.h"
 #include "access/hash.h"
+#include "catalog/pg_type.h"
 #include "catalog/pg_collation.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"

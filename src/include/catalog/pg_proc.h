@@ -4474,6 +4474,11 @@ DESCR("less-equal-greater");
 DATA(insert OID = 3252 (  pg_lsn_hash	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "3220" _null_ _null_ _null_ _null_ _null_ pg_lsn_hash _null_ _null_ _null_ ));
 DESCR("hash");
 
+/* Compression method handlers */
+DATA(insert OID = 3375 (  jsonb_handler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonb_handler _null_ _null_ _null_ ));
+DESCR("jsonb compression method handler");
+
+
 /* enum related procs */
 DATA(insert OID = 3504 (  anyenum_in	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 3500 "2275" _null_ _null_ _null_ _null_ _null_ anyenum_in _null_ _null_ _null_ ));
 DESCR("I/O");
