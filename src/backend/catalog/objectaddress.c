@@ -29,6 +29,7 @@
 #include "catalog/pg_default_acl.h"
 #include "catalog/pg_event_trigger.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_compression.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_constraint_fn.h"
 #include "catalog/pg_conversion.h"
@@ -143,6 +144,18 @@ static const ObjectPropertyType ObjectProperty[] =
 		Anum_pg_collation_collowner,
 		InvalidAttrNumber,
 		ACL_KIND_COLLATION,
+		true
+	},
+	{
+		CompressionMethodRelationId,
+		CompressionMethodOidIndexId,
+		COMPRESSIONMETHODOID,
+		COMPRESSIONMETHODNAME,
+		Anum_pg_compression_cmname,
+		InvalidAttrNumber, /* FIXME namespace, owner, acl */
+		InvalidAttrNumber,
+		InvalidAttrNumber,
+		-1,
 		true
 	},
 	{
@@ -656,6 +669,10 @@ static const struct object_type_map
 	/* OCLASS_TRANSFORM */
 	{
 		"transform", OBJECT_TRANSFORM
+	},
+	/* OCLASS_COMPRESSION_METHOD */
+	{
+		"compression method", OBJECT_COMPRESSION_METHOD
 	}
 };
 
@@ -812,6 +829,7 @@ get_object_address(ObjectType objtype, List *objname, List *objargs,
 			case OBJECT_FOREIGN_SERVER:
 			case OBJECT_EVENT_TRIGGER:
 			case OBJECT_ACCESS_METHOD:
+			case OBJECT_COMPRESSION_METHOD: /* FIXME */
 				address = get_object_address_unqualified(objtype,
 														 objname, missing_ok);
 				break;
@@ -1091,6 +1109,9 @@ get_object_address_unqualified(ObjectType objtype,
 			case OBJECT_EVENT_TRIGGER:
 				msg = gettext_noop("event trigger name cannot be qualified");
 				break;
+			case OBJECT_COMPRESSION_METHOD: /* FIXME */
+				msg = gettext_noop("compression method name cannot be qualified");
+				break;
 			default:
 				elog(ERROR, "unrecognized objtype: %d", (int) objtype);
 				msg = NULL;		/* placate compiler */
@@ -1154,6 +1175,11 @@ get_object_address_unqualified(ObjectType objtype,
 		case OBJECT_EVENT_TRIGGER:
 			address.classId = EventTriggerRelationId;
 			address.objectId = get_event_trigger_oid(name, missing_ok);
+			address.objectSubId = 0;
+			break;
+		case OBJECT_COMPRESSION_METHOD:
+			address.classId = CompressionMethodRelationId;
+			address.objectId = GetCompressionMethodOid(name, missing_ok);
 			address.objectSubId = 0;
 			break;
 		default:
@@ -2117,6 +2143,13 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_COLLATION,
 							   NameListToString(objname));
 			break;
+#if 0 /* FIXME */
+		case OBJECT_COMPRESSION_METHOD:
+			if (!pg_compression_method_ownercheck(address.objectId, roleid))
+				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_COMPRESSION_METHOD,
+							   NameListToString(objname));
+			break;
+#endif
 		case OBJECT_CONVERSION:
 			if (!pg_conversion_ownercheck(address.objectId, roleid))
 				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
@@ -2230,6 +2263,7 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 		case OBJECT_TSPARSER:
 		case OBJECT_TSTEMPLATE:
 		case OBJECT_ACCESS_METHOD:
+		case OBJECT_COMPRESSION_METHOD: /* FIXME */
 			/* We treat these object types as being owned by superusers */
 			if (!superuser_arg(roleid))
 				ereport(ERROR,
@@ -3195,6 +3229,17 @@ getObjectDescription(const ObjectAddress *object)
 				break;
 			}
 
+		case OCLASS_COMPRESSION_METHOD:
+			{
+				char *name = GetCompressionMethodName(object->objectId);
+				if (!name)
+					elog(ERROR, "cache lookup failed for compression method %u",
+						 object->objectId);
+				appendStringInfo(&buffer, _("compression method %s"), name);
+				pfree(name);
+				break;
+			}
+
 		default:
 			appendStringInfo(&buffer, "unrecognized object %u %u %d",
 							 object->classId,
@@ -3680,6 +3725,10 @@ getObjectTypeDescription(const ObjectAddress *object)
 			appendStringInfoString(&buffer, "access method");
 			break;
 
+		case OCLASS_COMPRESSION_METHOD:
+			appendStringInfoString(&buffer, "compression method");
+			break;
+
 		default:
 			appendStringInfo(&buffer, "unrecognized %u", object->classId);
 			break;
@@ -3916,6 +3965,20 @@ getObjectIdentityParts(const ObjectAddress *object,
 					*objname = list_make2(schema,
 										  pstrdup(NameStr(coll->collname)));
 				ReleaseSysCache(collTup);
+				break;
+			}
+
+		case OCLASS_COMPRESSION_METHOD:
+			{
+				char *cmname = GetCompressionMethodName(object->objectId);
+				if (!cmname)
+					elog(ERROR, "cache lookup failed for compression method %u",
+						 object->objectId);
+				appendStringInfoString(&buffer, quote_identifier(cmname));
+				if (objname)
+					*objname = list_make1(cmname);
+				else
+					pfree(cmname);
 				break;
 			}
 

@@ -1231,6 +1231,11 @@ ProcessUtilitySlow(Node *parsetree,
 							address = DefineCollation(stmt->defnames,
 													  stmt->definition);
 							break;
+						case OBJECT_COMPRESSION_METHOD:
+							Assert(stmt->args == NIL);
+							address = DefineCompressionMethod(stmt->defnames,
+															  stmt->definition);
+							break;
 						default:
 							elog(ERROR, "unrecognized define stmt type: %d",
 								 (int) stmt->kind);
@@ -1597,6 +1602,11 @@ ExecDropStmt(DropStmt *stmt, bool isTopLevel)
 		case OBJECT_FOREIGN_TABLE:
 			RemoveRelations(stmt);
 			break;
+		case OBJECT_COMPRESSION_METHOD:
+			if (stmt->behavior == DROP_CASCADE)
+			{
+				/* TODO decompress columns instead of their deletion */
+			}
 		default:
 			RemoveObjects(stmt);
 			break;
@@ -2187,6 +2197,9 @@ CreateCommandTag(Node *parsetree)
 				case OBJECT_ACCESS_METHOD:
 					tag = "DROP ACCESS METHOD";
 					break;
+				case OBJECT_COMPRESSION_METHOD:
+					tag = "DROP COMPRESSION METHOD";
+					break;
 				default:
 					tag = "???";
 			}
@@ -2289,6 +2302,9 @@ CreateCommandTag(Node *parsetree)
 					break;
 				case OBJECT_ACCESS_METHOD:
 					tag = "CREATE ACCESS METHOD";
+					break;
+				case OBJECT_COMPRESSION_METHOD:
+					tag = "CREATE COMPRESSION METHOD";
 					break;
 				default:
 					tag = "???";

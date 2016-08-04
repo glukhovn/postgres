@@ -428,6 +428,32 @@ tsm_handler_out(PG_FUNCTION_ARGS)
 
 
 /*
+ * compression_handler_in	- input routine for pseudo-type COMPRESSION_HANDLER.
+ */
+Datum
+compression_handler_in(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("cannot accept a value of type compression_handler")));
+
+	PG_RETURN_VOID();			/* keep compiler quiet */
+}
+
+/*
+ * compression_handler_out	- output routine for pseudo-type COMPRESSION_HANDLER.
+ */
+Datum
+compression_handler_out(PG_FUNCTION_ARGS)
+{
+	ereport(ERROR,
+			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			 errmsg("cannot display a value of type compression_handler")));
+
+	PG_RETURN_VOID();			/* keep compiler quiet */
+}
+
+/*
  * internal_in		- input routine for pseudo-type INTERNAL.
  */
 Datum

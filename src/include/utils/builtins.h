@@ -598,6 +598,8 @@ extern Datum index_am_handler_in(PG_FUNCTION_ARGS);
 extern Datum index_am_handler_out(PG_FUNCTION_ARGS);
 extern Datum tsm_handler_in(PG_FUNCTION_ARGS);
 extern Datum tsm_handler_out(PG_FUNCTION_ARGS);
+extern Datum compression_handler_in(PG_FUNCTION_ARGS);
+extern Datum compression_handler_out(PG_FUNCTION_ARGS);
 extern Datum internal_in(PG_FUNCTION_ARGS);
 extern Datum internal_out(PG_FUNCTION_ARGS);
 extern Datum opaque_in(PG_FUNCTION_ARGS);
