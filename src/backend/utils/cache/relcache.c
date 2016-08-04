@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "access/compression.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/reloptions.h"
@@ -482,6 +483,7 @@ RelationBuildTupleDesc(Relation relation)
 	TupleConstr *constr;
 	AttrDefault *attrdef = NULL;
 	int			ndef = 0;
+	CompressionMethodRoutine **cmroutines = NULL;
 
 	/* copy some fields from pg_class row to rd_att */
 	relation->rd_att->tdtypeid = relation->rd_rel->reltype;
@@ -553,6 +555,22 @@ RelationBuildTupleDesc(Relation relation)
 			attrdef[ndef].adbin = NULL;
 			ndef++;
 		}
+
+		if (!attp->attisdropped && OidIsValid(attp->attcompression))
+		{
+			MemoryContext oldctx = MemoryContextSwitchTo(CacheMemoryContext);
+
+			if (!cmroutines)
+				cmroutines = (CompressionMethodRoutine **)
+									palloc0(relation->rd_rel->relnatts *
+											sizeof(CompressionMethodRoutine *));
+
+			cmroutines[attp->attnum - 1] =
+					GetCompressionMethodRoutineByCmId(attp->attcompression);
+
+			MemoryContextSwitchTo(oldctx);
+		}
+
 		need--;
 		if (need == 0)
 			break;
@@ -626,6 +644,8 @@ RelationBuildTupleDesc(Relation relation)
 		pfree(constr);
 		relation->rd_att->constr = NULL;
 	}
+
+	relation->rd_att->tdcmroutines = cmroutines;
 }
 
 /*

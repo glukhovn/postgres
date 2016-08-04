@@ -1863,6 +1863,8 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 									   storage_name(def->storage),
 									   storage_name(newdef->storage))));
 
+				/* FIXME check compression mismatch */
+
 				/* Mark the column as locally defined */
 				def->is_local = true;
 				/* Merge of NOT NULL constraints = OR 'em together */
@@ -4854,6 +4856,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	attribute.attislocal = colDef->is_local;
 	attribute.attinhcount = colDef->inhcount;
 	attribute.attcollation = collOid;
+	attribute.attcompression = InvalidOid;
 	/* attribute.attacl is handled by InsertPgAttributeTuple */
 
 	ReleaseSysCache(typeTuple);
@@ -8396,6 +8399,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	attTup->attbyval = tform->typbyval;
 	attTup->attalign = tform->typalign;
 	attTup->attstorage = tform->typstorage;
+	attTup->attcompression = InvalidOid;
 
 	ReleaseSysCache(typeTuple);
 

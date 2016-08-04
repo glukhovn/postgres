@@ -2616,6 +2616,7 @@ _copyColumnDef(const ColumnDef *from)
 
 	COPY_STRING_FIELD(colname);
 	COPY_NODE_FIELD(typeName);
+	COPY_NODE_FIELD(compression);
 	COPY_SCALAR_FIELD(inhcount);
 	COPY_SCALAR_FIELD(is_local);
 	COPY_SCALAR_FIELD(is_not_null);
@@ -2631,6 +2632,18 @@ _copyColumnDef(const ColumnDef *from)
 
 	return newnode;
 }
+
+static ColumnCompression *
+_copyColumnCompression(const ColumnCompression *from)
+{
+	ColumnCompression  *newnode = makeNode(ColumnCompression);
+
+	COPY_STRING_FIELD(methodName);
+	COPY_NODE_FIELD(options);
+
+	return newnode;
+}
+
 
 static Constraint *
 _copyConstraint(const Constraint *from)
@@ -5026,6 +5039,9 @@ copyObject(const void *from)
 			break;
 		case T_ColumnDef:
 			retval = _copyColumnDef(from);
+			break;
+		case T_ColumnCompression:
+			retval = _copyColumnCompression(from);
 			break;
 		case T_Constraint:
 			retval = _copyConstraint(from);
