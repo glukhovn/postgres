@@ -363,6 +363,7 @@ extern Datum gin_triconsistent_jsonb_path(PG_FUNCTION_ARGS);
 
 /* pretty printer, returns text */
 extern Datum jsonb_pretty(PG_FUNCTION_ARGS);
+extern Datum jsonb_canonical(PG_FUNCTION_ARGS);
 
 /* concatenation */
 extern Datum jsonb_concat(PG_FUNCTION_ARGS);
