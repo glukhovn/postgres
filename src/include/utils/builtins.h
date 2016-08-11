@@ -845,7 +845,8 @@ extern Datum textoverlay(PG_FUNCTION_ARGS);
 extern Datum textoverlay_no_len(PG_FUNCTION_ARGS);
 extern Datum name_text(PG_FUNCTION_ARGS);
 extern Datum text_name(PG_FUNCTION_ARGS);
-extern int	varstr_cmp(char *arg1, int len1, char *arg2, int len2, Oid collid);
+extern int	varstr_cmp(const char *arg1, int len1,
+					   const char *arg2, int len2, Oid collid);
 extern void varstr_sortsupport(SortSupport ssup, Oid collid, bool bpchar);
 extern int varstr_levenshtein(const char *source, int slen,
 				   const char *target, int tlen,
