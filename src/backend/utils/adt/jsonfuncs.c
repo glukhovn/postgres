@@ -43,6 +43,7 @@
 #define JB_PATH_CREATE_OR_INSERT \
 	(JB_PATH_INSERT_BEFORE | JB_PATH_INSERT_AFTER | JB_PATH_CREATE)
 
+#ifndef JSON_GENERIC
 /* semantic action functions for json_object_keys */
 static void okeys_object_field_start(void *state, char *fname, bool isnull);
 static void okeys_array_start(void *state);
@@ -63,8 +64,10 @@ static void get_scalar(void *state, char *token, JsonTokenType tokentype);
 static Datum get_path_all(FunctionCallInfo fcinfo, bool as_text);
 static text *get_worker(text *json, char **tpath, int *ipath, int npath,
 		   bool normalize_results);
+#endif
 static Datum get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text);
 
+#ifndef JSON_GENERIC
 /* semantic action functions for json_array_length */
 static void alen_object_start(void *state);
 static void alen_scalar(void *state, char *token, JsonTokenType tokentype);
@@ -72,9 +75,11 @@ static void alen_array_element_start(void *state, bool isnull);
 
 /* common workers for json{b}_each* functions */
 static Datum each_worker(FunctionCallInfo fcinfo, bool as_text);
+#endif
 static Datum each_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname,
 				  bool as_text);
 
+#ifndef JSON_GENERIC
 /* semantic action functions for json_each */
 static void each_object_field_start(void *state, char *fname, bool isnull);
 static void each_object_field_end(void *state, char *fname, bool isnull);
@@ -84,9 +89,11 @@ static void each_scalar(void *state, char *token, JsonTokenType tokentype);
 /* common workers for json{b}_array_elements_* functions */
 static Datum elements_worker(FunctionCallInfo fcinfo, const char *funcname,
 				bool as_text);
+#endif
 static Datum elements_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname,
 					  bool as_text);
 
+#ifndef JSON_GENERIC
 /* semantic action functions for json_array_elements */
 static void elements_object_start(void *state);
 static void elements_array_element_start(void *state, bool isnull);
@@ -95,11 +102,13 @@ static void elements_scalar(void *state, char *token, JsonTokenType tokentype);
 
 /* turn a json object into a hash table */
 static HTAB *get_json_object_as_hash(text *json, const char *funcname);
+#endif
 
 /* common worker for populate_record and to_record */
 static Datum populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 					   bool have_record_arg);
 
+#ifndef JSON_GENERIC
 /* semantic action functions for get_json_object_as_hash */
 static void hash_object_field_start(void *state, char *fname, bool isnull);
 static void hash_object_field_end(void *state, char *fname, bool isnull);
@@ -123,6 +132,7 @@ static void sn_array_end(void *state);
 static void sn_object_field_start(void *state, char *fname, bool isnull);
 static void sn_array_element_start(void *state, bool isnull);
 static void sn_scalar(void *state, char *token, JsonTokenType tokentype);
+#endif
 
 /* worker function for populate_recordset and to_recordset */
 static Datum populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
@@ -365,6 +375,7 @@ jsonb_object_keys(PG_FUNCTION_ARGS)
 }
 
 
+#ifndef JSON_GENERIC
 Datum
 json_object_keys(PG_FUNCTION_ARGS)
 {
@@ -497,6 +508,7 @@ json_object_field(PG_FUNCTION_ARGS)
 	else
 		PG_RETURN_NULL();
 }
+#endif
 
 Datum
 jsonb_object_field(PG_FUNCTION_ARGS)
@@ -518,6 +530,7 @@ jsonb_object_field(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_object_field_text(PG_FUNCTION_ARGS)
 {
@@ -533,6 +546,7 @@ json_object_field_text(PG_FUNCTION_ARGS)
 	else
 		PG_RETURN_NULL();
 }
+#endif
 
 Datum
 jsonb_object_field_text(PG_FUNCTION_ARGS)
@@ -585,6 +599,7 @@ jsonb_object_field_text(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_array_element(PG_FUNCTION_ARGS)
 {
@@ -599,6 +614,7 @@ json_array_element(PG_FUNCTION_ARGS)
 	else
 		PG_RETURN_NULL();
 }
+#endif
 
 Datum
 jsonb_array_element(PG_FUNCTION_ARGS)
@@ -630,6 +646,7 @@ jsonb_array_element(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_array_element_text(PG_FUNCTION_ARGS)
 {
@@ -644,6 +661,7 @@ json_array_element_text(PG_FUNCTION_ARGS)
 	else
 		PG_RETURN_NULL();
 }
+#endif
 
 Datum
 jsonb_array_element_text(PG_FUNCTION_ARGS)
@@ -706,6 +724,7 @@ jsonb_array_element_text(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_extract_path(PG_FUNCTION_ARGS)
 {
@@ -1162,6 +1181,8 @@ get_scalar(void *state, char *token, JsonTokenType tokentype)
 	}
 }
 
+#endif
+
 Datum
 jsonb_extract_path(PG_FUNCTION_ARGS)
 {
@@ -1342,6 +1363,7 @@ get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text)
 	}
 }
 
+#ifndef JSON_GENERIC
 /*
  * SQL function json_array_length(json) -> int
  */
@@ -1372,6 +1394,7 @@ json_array_length(PG_FUNCTION_ARGS)
 
 	PG_RETURN_INT32(state->count);
 }
+#endif
 
 Datum
 jsonb_array_length(PG_FUNCTION_ARGS)
@@ -1391,6 +1414,7 @@ jsonb_array_length(PG_FUNCTION_ARGS)
 										   : JsonGetArraySize(JsonRoot(jb)));
 }
 
+#ifndef JSON_GENERIC
 /*
  * These next two checks ensure that the json is an array (since it can't be
  * a scalar or an object).
@@ -1445,6 +1469,7 @@ json_each(PG_FUNCTION_ARGS)
 {
 	return each_worker(fcinfo, false);
 }
+#endif
 
 Datum
 jsonb_each(PG_FUNCTION_ARGS)
@@ -1452,11 +1477,13 @@ jsonb_each(PG_FUNCTION_ARGS)
 	return each_worker_jsonb(fcinfo, "jsonb_each", false);
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_each_text(PG_FUNCTION_ARGS)
 {
 	return each_worker(fcinfo, true);
 }
+#endif
 
 Datum
 jsonb_each_text(PG_FUNCTION_ARGS)
@@ -1602,6 +1629,7 @@ each_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname, bool as_text)
 }
 
 
+#ifndef JSON_GENERIC
 static Datum
 each_worker(FunctionCallInfo fcinfo, bool as_text)
 {
@@ -1761,6 +1789,7 @@ each_scalar(void *state, char *token, JsonTokenType tokentype)
 	if (_state->next_scalar)
 		_state->normalized_scalar = token;
 }
+#endif
 
 /*
  * SQL functions json_array_elements and json_array_elements_text
@@ -1908,6 +1937,7 @@ elements_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname,
 	PG_RETURN_NULL();
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_array_elements(PG_FUNCTION_ARGS)
 {
@@ -2081,6 +2111,7 @@ elements_scalar(void *state, char *token, JsonTokenType tokentype)
 	if (_state->next_scalar)
 		_state->normalized_scalar = token;
 }
+#endif
 
 /*
  * SQL function json_populate_record
@@ -2106,6 +2137,7 @@ jsonb_to_record(PG_FUNCTION_ARGS)
 	return populate_record_worker(fcinfo, "jsonb_to_record", false);
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_populate_record(PG_FUNCTION_ARGS)
 {
@@ -2117,16 +2149,21 @@ json_to_record(PG_FUNCTION_ARGS)
 {
 	return populate_record_worker(fcinfo, "json_to_record", false);
 }
+#endif
 
 static Datum
 populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 					   bool have_record_arg)
 {
 	int			json_arg_num = have_record_arg ? 1 : 0;
+#ifndef JSON_GENERIC
 	Oid			jtype = get_fn_expr_argtype(fcinfo->flinfo, json_arg_num);
 	text	   *json;
+#endif
 	Jsonb	   *jb = NULL;
+#ifndef JSON_GENERIC
 	HTAB	   *json_hash = NULL;
+#endif
 	HeapTupleHeader rec = NULL;
 	Oid			tupType = InvalidOid;
 	int32		tupTypmod = -1;
@@ -2139,7 +2176,9 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 	Datum	   *values;
 	bool	   *nulls;
 
+#ifndef JSON_GENERIC
 	Assert(jtype == JSONOID || jtype == JSONBOID);
+#endif
 
 	if (have_record_arg)
 	{
@@ -2193,6 +2232,7 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 							 "using a column definition list.")));
 	}
 
+#ifndef JSON_GENERIC
 	if (jtype == JSONOID)
 	{
 		/* just get the text */
@@ -2213,6 +2253,7 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 		}
 	}
 	else
+#endif
 	{
 		jb = PG_GETARG_JSONB(json_arg_num);
 
@@ -2287,7 +2328,9 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 		ColumnIOData *column_info = &my_extra->columns[i];
 		Oid			column_type = tupdesc->attrs[i]->atttypid;
 		JsonbValue *v = NULL;
+#ifndef JSON_GENERIC
 		JsonHashEntry *hashentry = NULL;
+#endif
 
 		/* Ignore dropped columns in datatype */
 		if (tupdesc->attrs[i]->attisdropped)
@@ -2296,6 +2339,7 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 			continue;
 		}
 
+#ifndef JSON_GENERIC
 		if (jtype == JSONOID)
 		{
 			hashentry = hash_search(json_hash,
@@ -2303,6 +2347,7 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 									HASH_FIND, NULL);
 		}
 		else
+#endif
 		{
 			char	   *key = NameStr(tupdesc->attrs[i]->attname);
 
@@ -2318,8 +2363,15 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 		 * then every field which we don't populate needs to be run through
 		 * the input function just in case it's a domain type.
 		 */
-		if (((jtype == JSONOID && hashentry == NULL) ||
-			 (jtype == JSONBOID && v == NULL)) && rec)
+		if (
+#ifndef JSON_GENERIC
+			((jtype == JSONOID && hashentry == NULL) ||
+
+			 (jtype == JSONBOID && v == NULL))
+#else
+			v == NULL
+#endif
+				&& rec)
 			continue;
 
 		/*
@@ -2334,8 +2386,13 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 						  fcinfo->flinfo->fn_mcxt);
 			column_info->column_type = column_type;
 		}
-		if ((jtype == JSONOID && (hashentry == NULL || hashentry->isnull)) ||
+		if (
+#ifndef JSON_GENERIC
+			(jtype == JSONOID && (hashentry == NULL || hashentry->isnull)) ||
 			(jtype == JSONBOID && (v == NULL || v->type == jbvNull)))
+#else
+			(v == NULL || v->type == jbvNull))
+#endif
 		{
 			/*
 			 * need InputFunctionCall to happen even for nulls, so that domain
@@ -2350,12 +2407,14 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 		{
 			char	   *s = NULL;
 
+#ifndef JSON_GENERIC
 			if (jtype == JSONOID)
 			{
 				/* already done the hard work in the json case */
 				s = hashentry->val;
 			}
 			else
+#endif
 			{
 				if (v->type == jbvString)
 					s = pnstrdup(v->val.string.val, v->val.string.len);
@@ -2381,12 +2440,15 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 
 	ReleaseTupleDesc(tupdesc);
 
+#ifndef JSON_GENERIC
 	if (json_hash)
 		hash_destroy(json_hash);
+#endif
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(rettuple));
 }
 
+#ifndef JSON_GENERIC
 /*
  * get_json_object_as_hash
  *
@@ -2520,6 +2582,7 @@ hash_scalar(void *state, char *token, JsonTokenType tokentype)
 	if (_state->lex->lex_level == 1)
 		_state->saved_scalar = token;
 }
+#endif
 
 
 /*
@@ -2544,6 +2607,7 @@ jsonb_to_recordset(PG_FUNCTION_ARGS)
 	return populate_recordset_worker(fcinfo, "jsonb_to_recordset", false);
 }
 
+#ifndef JSON_GENERIC
 Datum
 json_populate_recordset(PG_FUNCTION_ARGS)
 {
@@ -2555,6 +2619,7 @@ json_to_recordset(PG_FUNCTION_ARGS)
 {
 	return populate_recordset_worker(fcinfo, "json_to_recordset", false);
 }
+#endif
 
 static void
 make_row_from_rec_and_jsonb(Jsonb *element, PopulateRecordsetState *state)
@@ -2682,7 +2747,9 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 						  bool have_record_arg)
 {
 	int			json_arg_num = have_record_arg ? 1 : 0;
+#ifndef JSON_GENERIC
 	Oid			jtype = get_fn_expr_argtype(fcinfo->flinfo, json_arg_num);
+#endif
 	ReturnSetInfo *rsi;
 	MemoryContext old_cxt;
 	Oid			tupType;
@@ -2784,6 +2851,7 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 	state->rec = rec;
 	state->fn_mcxt = fcinfo->flinfo->fn_mcxt;
 
+#ifndef JSON_GENERIC
 	if (jtype == JSONOID)
 	{
 		text	   *json = PG_GETARG_TEXT_P(json_arg_num);
@@ -2808,6 +2876,7 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 		pg_parse_json(lex, sem);
 	}
 	else
+#endif
 	{
 		Jsonb	   *jb = PG_GETARG_JSONB(json_arg_num);
 		JsonbIterator *it;
@@ -2815,7 +2884,9 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 		bool		skipNested = false;
 		JsonbIteratorToken r;
 
+#ifndef JSON_GENERIC
 		Assert(jtype == JSONBOID);
+#endif
 
 		if (JB_ROOT_IS_SCALAR(jb) || !JB_ROOT_IS_ARRAY(jb))
 			ereport(ERROR,
@@ -2849,6 +2920,7 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 	PG_RETURN_NULL();
 }
 
+#ifndef JSON_GENERIC
 static void
 populate_recordset_object_start(void *state)
 {
@@ -3240,6 +3312,7 @@ json_strip_nulls(PG_FUNCTION_ARGS)
 											  state->strval->len));
 
 }
+#endif
 
 /*
  * SQL function jsonb_strip_nulls(jsonb) -> jsonb
