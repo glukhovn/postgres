@@ -33,4 +33,7 @@ typedef struct CompressionMethodRoutine
 extern CompressionMethodRoutine *GetCompressionMethodRoutine(Oid cmhandler);
 extern CompressionMethodRoutine *GetCompressionMethodRoutineByCmId(Oid cmoid);
 
+extern CompressionMethodRoutine *JsonGetCMR(); /* FIXME */
+extern CompressionMethodRoutine *JsonbGetCMR();
+
 #endif /* COMPRESSION_H */

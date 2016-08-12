@@ -556,7 +556,14 @@ RelationBuildTupleDesc(Relation relation)
 			ndef++;
 		}
 
-		if (!attp->attisdropped && OidIsValid(attp->attcompression))
+#define TypeIsCompressable(type) ((type) == JSONOID || (type) == JSONBOID)
+
+#define GetCompressionMethodRoutineForType(type) \
+	((type) == JSONOID ? JsonGetCMR() : JsonbGetCMR())
+
+		if (!attp->attisdropped &&
+			(OidIsValid(attp->attcompression) ||
+			 TypeIsCompressable(attp->atttypid)))
 		{
 			MemoryContext oldctx = MemoryContextSwitchTo(CacheMemoryContext);
 
@@ -565,8 +572,9 @@ RelationBuildTupleDesc(Relation relation)
 									palloc0(relation->rd_rel->relnatts *
 											sizeof(CompressionMethodRoutine *));
 
-			cmroutines[attp->attnum - 1] =
-					GetCompressionMethodRoutineByCmId(attp->attcompression);
+			cmroutines[attp->attnum - 1] = OidIsValid(attp->attcompression) ?
+					GetCompressionMethodRoutineByCmId(attp->attcompression) :
+					GetCompressionMethodRoutineForType(attp->atttypid);
 
 			MemoryContextSwitchTo(oldctx);
 		}
