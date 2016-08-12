@@ -4477,6 +4477,8 @@ DESCR("hash");
 /* Compression method handlers */
 DATA(insert OID = 3375 (  jsonb_handler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonb_handler _null_ _null_ _null_ ));
 DESCR("jsonb compression method handler");
+DATA(insert OID = 3376 (  jsonbc_handler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonbc_handler _null_ _null_ _null_ ));
+DESCR("jsonbc compression method handler");
 
 
 /* enum related procs */
