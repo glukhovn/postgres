@@ -141,6 +141,7 @@ typedef struct JsonbValue JsonbValue;
  */
 typedef uint32 JEntry;
 
+#ifdef JSONB_UTIL_C
 #define JENTRY_OFFLENMASK		0x0FFFFFFF
 #define JENTRY_TYPEMASK			0x70000000
 #define JENTRY_HAS_OFF			0x80000000
@@ -182,6 +183,7 @@ typedef uint32 JEntry;
  * without breaking on-disk compatibility.
  */
 #define JB_OFFSET_STRIDE		32
+#endif
 
 /*
  * A jsonb array or object node, within a Jsonb Datum.
@@ -215,11 +217,14 @@ typedef struct
 	JsonbContainer root;
 } Jsonb;
 
+#ifdef JSONB_UTIL_C
 /* convenience macros for accessing the root container in a Jsonb datum */
-#define JB_ROOT_COUNT(jbp_)		( *(uint32*) VARDATA(jbp_) & JB_CMASK)
-#define JB_ROOT_IS_SCALAR(jbp_) ( *(uint32*) VARDATA(jbp_) & JB_FSCALAR)
-#define JB_ROOT_IS_OBJECT(jbp_) ( *(uint32*) VARDATA(jbp_) & JB_FOBJECT)
-#define JB_ROOT_IS_ARRAY(jbp_)	( *(uint32*) VARDATA(jbp_) & JB_FARRAY)
+#define JB_HEADER(jbp_)			(((JsonbContainer *) VARDATA(jbp_))->header)
+#define JB_ROOT_COUNT(jbp_)		(JB_HEADER(jbp_) & JB_CMASK)
+#define JB_ROOT_IS_SCALAR(jbp_) (JB_HEADER(jbp_) & JB_FSCALAR)
+#define JB_ROOT_IS_OBJECT(jbp_) (JB_HEADER(jbp_) & JB_FOBJECT)
+#define JB_ROOT_IS_ARRAY(jbp_)	(JB_HEADER(jbp_) & JB_FARRAY)
+#endif
 
 typedef enum
 {
@@ -232,7 +237,9 @@ typedef enum
 	jbvArray = 0x10,
 	jbvObject,
 	/* Binary (i.e. struct Jsonb) jbvArray/jbvObject */
-	jbvBinary
+	jbvBinary,
+
+	jbvScalar = 0x100
 } JsonbValueType;
 
 /*
@@ -252,7 +259,7 @@ struct JsonbValue
 		struct
 		{
 			int			len;
-			char	   *val;	/* Not necessarily null-terminated */
+			const char  *val;	/* Not necessarily null-terminated */
 		}			string;		/* String primitive type */
 
 		struct
@@ -270,8 +277,8 @@ struct JsonbValue
 
 		struct
 		{
-			int			len;
-			JsonbContainer *data;
+			int			len; /* FIXME remove */
+			const struct JsonContainerData *data;
 		}			binary;		/* Array or object, in on-disk format */
 	}			val;
 };
@@ -390,29 +397,22 @@ extern int	compareJsonbContainers(JsonbContainer *a, JsonbContainer *b);
 extern JsonbValue *findJsonbValueFromContainer(const JsonbContainer *sheader,
 							uint32 flags,
 							JsonbValue *key);
-extern JsonbValue *getIthJsonbValueFromContainer(JsonbContainer *sheader,
-							  uint32 i);
 extern JsonbValue *pushJsonbValue(JsonbParseState **pstate,
 								  JsonbIteratorToken seq,
 								  const JsonbValue *jbVal);
+extern JsonbValue *pushJsonbValueScalar(JsonbParseState **pstate,
+										JsonbIteratorToken seq,
+										const JsonbValue *scalarVal);
 extern JsonbValue *pushScalarJsonbValue(JsonbParseState **pstate,
-										   JsonbValue *jbval, bool isKey);
+										const JsonbValue *jbval, bool isKey);
 extern JsonbParseState *JsonbParseStateClone(JsonbParseState *state);
-extern JsonbIterator *JsonbIteratorInit(JsonbContainer *container);
-extern JsonbIteratorToken JsonbIteratorNext(JsonbIterator **it, JsonbValue *val,
+typedef struct JsonIteratorData JsonIterator;
+extern JsonbIteratorToken JsonbIteratorNext(JsonIterator **it, JsonbValue *val,
 				  bool skipNested);
 extern Jsonb *JsonbValueToJsonb(JsonbValue *val);
-extern bool JsonbDeepContains(JsonbIterator **val,
-				  JsonbIterator **mContained);
 extern void JsonbHashScalarValue(const JsonbValue *scalarVal, uint32 *hash);
 
 extern int reserveFromBuffer(StringInfo buffer, int len);
 extern void appendToBuffer(StringInfo buffer, const char *data, int len);
-/* jsonb.c support functions */
-extern char *JsonbToCString(StringInfo out, JsonbContainer *in,
-			   int estimated_len);
-extern char *JsonbToCStringIndent(StringInfo out, JsonbContainer *in,
-					 int estimated_len);
-
 
 #endif   /* __JSONB_H__ */

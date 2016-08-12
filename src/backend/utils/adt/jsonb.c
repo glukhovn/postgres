@@ -25,6 +25,7 @@
 #include "utils/json.h"
 #include "utils/jsonapi.h"
 #include "utils/jsonb.h"
+#include "utils/json_generic.h"
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
@@ -139,7 +140,7 @@ jsonb_out(PG_FUNCTION_ARGS)
 	Jsonb	   *jb = PG_GETARG_JSONB(0);
 	char	   *out;
 
-	out = JsonbToCString(NULL, JsonbRoot(jb), JsonbGetSize(jb))
+	out = JsonToCString(JsonbRoot(jb));
 
 	PG_RETURN_CSTRING(out);
 }

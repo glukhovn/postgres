@@ -29,6 +29,7 @@
 #include "utils/json.h"
 #include "utils/jsonapi.h"
 #include "utils/jsonb.h"
+#include "utils/json_generic.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/typcache.h"
@@ -127,11 +128,6 @@ static void sn_scalar(void *state, char *token, JsonTokenType tokentype);
 static Datum populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 						  bool have_record_arg);
 
-/* Worker that takes care of common setup for us */
-static JsonbValue *findJsonbValueFromContainerLen(JsonbContainer *container,
-							   uint32 flags,
-							   char *key,
-							   uint32 keylen);
 
 /* functions supporting jsonb_delete, jsonb_set and jsonb_concat */
 static JsonbValue *IteratorConcat(JsonbIterator **it1, JsonbIterator **it2,
@@ -1265,10 +1261,13 @@ get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text)
 				uint32		nelements;
 
 				/* Container must be array, but make sure */
-				if ((container->header & JB_FARRAY) == 0)
+
+				if (!JsonContainerIsArray(container))
 					elog(ERROR, "not a jsonb array");
 
-				nelements = container->header & JB_CMASK;
+				nelements = JsonContainerSize(container) >= 0 ?
+							JsonContainerSize(container) :
+							JsonGetArraySize(container);
 
 				if (-lindex > nelements)
 					PG_RETURN_NULL();
