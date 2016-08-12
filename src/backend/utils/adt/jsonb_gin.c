@@ -82,6 +82,9 @@ gin_extract_jsonb(PG_FUNCTION_ARGS)
 		PG_RETURN_POINTER(NULL);
 	}
 
+	if (total < 0)
+		total = 8;
+
 	/* Otherwise, use 2 * root count as initial estimate of result size */
 	entries = (Datum *) palloc(sizeof(Datum) * total);
 
@@ -346,6 +349,9 @@ gin_extract_jsonb_path(PG_FUNCTION_ARGS)
 		*nentries = 0;
 		PG_RETURN_POINTER(NULL);
 	}
+
+	if (total < 0)
+		total = 8;
 
 	/* Otherwise, use 2 * root count as initial estimate of result size */
 	entries = (Datum *) palloc(sizeof(Datum) * total);
