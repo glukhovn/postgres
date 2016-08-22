@@ -71,6 +71,7 @@
 #include "storage/smgr.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/datum.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -466,6 +467,34 @@ RelationParseRelOptions(Relation relation, HeapTuple tuple)
 	}
 }
 
+static Datum
+GetAttributeCompressionOptions(Oid relid, AttrNumber attnum)
+{
+	HeapTuple	tp;
+	Datum		datum;
+	bool		isnull;
+
+	tp = SearchSysCache2(ATTNUM,
+						 ObjectIdGetDatum(relid),
+						 Int16GetDatum(attnum));
+
+	if (!HeapTupleIsValid(tp))
+		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
+			 attnum, relid);
+
+	datum = SysCacheGetAttr(ATTNUM,
+							tp,
+							Anum_pg_attribute_attcmoptions,
+							&isnull);
+
+	if (!isnull)
+		datum = datumCopy(datum, false, -1);
+
+	ReleaseSysCache(tp);
+
+	return isnull ? PointerGetDatum(NULL) : datum;
+}
+
 /*
  *		RelationBuildTupleDesc
  *
@@ -483,7 +512,7 @@ RelationBuildTupleDesc(Relation relation)
 	TupleConstr *constr;
 	AttrDefault *attrdef = NULL;
 	int			ndef = 0;
-	CompressionMethodRoutine **cmroutines = NULL;
+	AttributeCompression *compression = NULL;
 
 	/* copy some fields from pg_class row to rd_att */
 	relation->rd_att->tdtypeid = relation->rd_rel->reltype;
@@ -565,16 +594,35 @@ RelationBuildTupleDesc(Relation relation)
 			(OidIsValid(attp->attcompression) ||
 			 TypeIsCompressable(attp->atttypid)))
 		{
-			MemoryContext oldctx = MemoryContextSwitchTo(CacheMemoryContext);
+			MemoryContext	oldctx = MemoryContextSwitchTo(CacheMemoryContext);
+			Datum			optionsDatum;
+			List		   *optionsList;
+			CompressionMethodRoutine *cmr;
 
-			if (!cmroutines)
-				cmroutines = (CompressionMethodRoutine **)
+			if (!compression)
+				compression = (AttributeCompression *)
 									palloc0(relation->rd_rel->relnatts *
-											sizeof(CompressionMethodRoutine *));
+											sizeof(AttributeCompression));
 
-			cmroutines[attp->attnum - 1] = OidIsValid(attp->attcompression) ?
-					GetCompressionMethodRoutineByCmId(attp->attcompression) :
-					GetCompressionMethodRoutineForType(attp->atttypid);
+			if (OidIsValid(attp->attcompression))
+			{
+				cmr = GetCompressionMethodRoutineByCmId(attp->attcompression);
+				optionsDatum = GetAttributeCompressionOptions(
+								RelationGetRelid(relation), attp->attnum);
+				optionsList = untransformRelOptions(optionsDatum);
+			}
+			else
+			{
+				cmr = GetCompressionMethodRoutineForType(attp->atttypid);
+				optionsDatum = PointerGetDatum(NULL);
+				optionsList = NIL;
+			}
+
+			compression[attp->attnum - 1].routine = cmr;
+			compression[attp->attnum - 1].optionsDatum = optionsDatum;
+			compression[attp->attnum - 1].options =
+					cmr->options && cmr->options->convert ?
+					cmr->options->convert(attp, optionsList) : optionsList;
 
 			MemoryContextSwitchTo(oldctx);
 		}
@@ -653,7 +701,7 @@ RelationBuildTupleDesc(Relation relation)
 		relation->rd_att->constr = NULL;
 	}
 
-	relation->rd_att->tdcmroutines = cmroutines;
+	relation->rd_att->tdcompression = compression;
 }
 
 /*

@@ -38,6 +38,7 @@
  */
 #include "postgres.h"
 
+#include "access/compression.h"
 #include "access/heapam.h"
 #include "access/heapam_xlog.h"
 #include "access/hio.h"
@@ -2545,6 +2546,26 @@ heap_insert(Relation relation, HeapTuple tup, TupleDesc tupdesc,
 	return HeapTupleGetOid(tup);
 }
 
+static inline bool
+tuple_attr_compression_equals(TupleDesc td1, TupleDesc td2, AttrNumber attidx)
+{
+	if (td1->attrs[attidx]->attcompression !=
+		td2->attrs[attidx]->attcompression)
+		return false;
+
+	if (!OidIsValid(td1->attrs[attidx]->attcompression))
+		return true;
+
+	Assert(td2->tdcompression && td2->tdcompression[attidx].routine);
+
+	if (!td2->tdcompression[attidx].routine->options)
+		return true;
+
+	return td2->tdcompression[attidx].routine->options->equal(
+										td2->tdcompression[attidx].options,
+										td1->tdcompression[attidx].options);
+}
+
 static inline bool *
 heap_tuple_needs_recompression(HeapTuple tup, TupleDesc td1, TupleDesc td2)
 {
@@ -2555,7 +2576,7 @@ heap_tuple_needs_recompression(HeapTuple tup, TupleDesc td1, TupleDesc td2)
 	if (td1 == td2)
 		return NULL;
 
-	if (!td1->tdcmroutines && !td2->tdcmroutines)
+	if (!td1->tdcompression && !td2->tdcompression)
 		return NULL;
 
 	for (att = 1; att <= natts; att++)
@@ -2563,13 +2584,13 @@ heap_tuple_needs_recompression(HeapTuple tup, TupleDesc td1, TupleDesc td2)
 		if (heap_attisnull(tup, att))
 			continue;
 
-		if (td1->attrs[att - 1]->attcompression !=
-			td2->attrs[att - 1]->attcompression)
-		{
-			if (!recompress)
-				recompress = palloc0(sizeof(bool) * natts);
-			recompress[att - 1] = true;
-		}
+		if (tuple_attr_compression_equals(td1, td2, att - 1))
+			continue;
+
+		if (!recompress)
+			recompress = palloc0(sizeof(bool) * natts);
+
+		recompress[att - 1] = true;
 	}
 
 	return recompress;

@@ -130,6 +130,7 @@ extern Oid	RemoveUserMapping(DropUserMappingStmt *stmt);
 extern void RemoveUserMappingById(Oid umId);
 extern void CreateForeignTable(CreateForeignTableStmt *stmt, Oid relid);
 extern void ImportForeignSchema(ImportForeignSchemaStmt *stmt);
+extern Datum optionListToArray(List *options);
 extern Datum transformGenericOptions(Oid catalogId,
 						Datum oldOptions,
 						List *options,

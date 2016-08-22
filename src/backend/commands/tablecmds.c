@@ -14,6 +14,7 @@
  */
 #include "postgres.h"
 
+#include "access/compression.h"
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/multixact.h"
@@ -85,6 +86,7 @@
 #include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/datum.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
@@ -424,6 +426,8 @@ static void ATExecGenericOptions(Relation rel, List *options);
 static void ATExecEnableRowSecurity(Relation rel);
 static void ATExecDisableRowSecurity(Relation rel);
 static void ATExecForceNoForceRowSecurity(Relation rel, bool force_rls);
+static void ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
+		const char *column, ColumnCompression *compression, LOCKMODE lockmode);
 
 static void copy_relation_data(SMgrRelation rel, SMgrRelation dst,
 				   ForkNumber forkNum, char relpersistence);
@@ -2912,6 +2916,7 @@ AlterTableGetLockLevel(List *cmds)
 				 */
 			case AT_GenericOptions:
 			case AT_AlterColumnGenericOptions:
+			case AT_AlterColumnCompression:
 				cmd_lockmode = AccessExclusiveLock;
 				break;
 
@@ -3376,6 +3381,12 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
+		case AT_AlterColumnCompression:
+			ATSimplePermissions(rel, ATT_TABLE);
+			/* This command never recurses */
+			/* No command-specific prep needed */
+			pass = AT_PASS_MISC;
+			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -3695,6 +3706,12 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		case AT_GenericOptions:
 			ATExecGenericOptions(rel, (List *) cmd->def);
 			break;
+		case AT_AlterColumnCompression:
+			ATExecAlterColumnCompression(tab, rel, cmd->name,
+										 (ColumnCompression *) cmd->def,
+										 lockmode);
+			break;
+
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -4862,7 +4879,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL);
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, PointerGetDatum(NULL));
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -11242,6 +11259,156 @@ ATExecGenericOptions(Relation rel, List *options)
 
 	heap_freetuple(tuple);
 }
+
+static void
+ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
+							 const char *column, ColumnCompression *compression,
+							 LOCKMODE lockmode)
+{
+	Relation			attrel;
+	HeapTuple			tuple;
+	Form_pg_attribute	atttableform;
+	AttrNumber			attnum;
+	List			   *newOptions;
+	Datum				oldOptionsDatum;
+	Datum				newOptionsDatum;
+	bool				oldOptionsIsNull;
+	bool				newOptionsIsNull;
+	Oid					newCm;
+	Oid					oldCm;
+	CompressionMethodRoutine *newCmr;
+
+	attrel = heap_open(AttributeRelationId, RowExclusiveLock);
+	tuple = SearchSysCacheAttName(RelationGetRelid(rel), column);
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("column \"%s\" of relation \"%s\" does not exist",
+						column, RelationGetRelationName(rel))));
+
+	/* Prevent them from altering a system attribute */
+	atttableform = (Form_pg_attribute) GETSTRUCT(tuple);
+	attnum = atttableform->attnum;
+	if (attnum <= 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot alter system column \"%s\"", column)));
+
+	if (compression)
+	{
+		newCm = GetCompressionMethodOid(compression->methodName, false);
+		newCmr = GetCompressionMethodRoutineByCmId(newCm);
+		newOptions = compression->options;
+
+		if (newCmr->options && newCmr->options->validate)
+			newOptions = newCmr->options->validate(atttableform, newOptions);
+		else if (newOptions != NIL)
+			elog(ERROR, "%s compression method has no options",
+				 compression->methodName);
+
+		newOptionsIsNull = newOptions == NIL;
+		newOptionsDatum = optionListToArray(newOptions);
+	}
+	else
+	{
+		newCmr = NULL;
+		newCm = InvalidOid;
+		newOptions = NULL;
+		newOptionsIsNull = true;
+		newOptionsDatum = PointerGetDatum(NULL);
+	}
+
+	/* Extract the current options */
+	oldOptionsDatum = SysCacheGetAttr(ATTNAME,
+									  tuple,
+									  Anum_pg_attribute_attcmoptions,
+									  &oldOptionsIsNull);
+
+	oldCm = atttableform->attcompression;
+
+	if (newCm != oldCm ||
+		(oldOptionsIsNull != newOptionsIsNull ||
+		 (!newOptionsIsNull &&
+		  !datumIsEqual(oldOptionsDatum, newOptionsDatum, false, -1))))
+	{
+		HeapTuple	newtuple;
+		Datum		values[Natts_pg_attribute];
+		bool		nulls[Natts_pg_attribute];
+		bool		replace[Natts_pg_attribute];
+
+		if (OidIsValid(oldCm))
+		{
+			CompressionMethodRoutine *oldCmr =
+					GetCompressionMethodRoutineByCmId(oldCm);
+			if (oldCmr->dropAttr)
+			{
+				List *oldOptions = oldOptionsIsNull ? NIL :
+								untransformRelOptions(oldOptionsDatum);
+				oldCmr->dropAttr(atttableform, oldOptions);
+			}
+			pfree(oldCmr);
+		}
+
+		if (OidIsValid(newCm) && newCmr->addAttr)
+			newCmr->addAttr(atttableform, newOptions);
+
+		/* Initialize buffers for new tuple values */
+		memset(values, 0, sizeof(values));
+		memset(nulls, false, sizeof(nulls));
+		memset(replace, false, sizeof(replace));
+
+		if (newCm != oldCm)
+		{
+			values[Anum_pg_attribute_attcompression - 1] = ObjectIdGetDatum(newCm);
+			replace[Anum_pg_attribute_attcompression - 1] = true;
+
+			if (OidIsValid(oldCm))
+				deleteDependencyRecordsForClass(RelationRelationId,
+												RelationGetRelid(rel),
+												attnum,
+												CompressionMethodRelationId,
+												DEPENDENCY_NORMAL);
+
+			if (OidIsValid(newCm))
+			{
+				ObjectAddress	myself,
+								referenced;
+				ObjectAddressSubSet(myself, RelationRelationId,
+									RelationGetRelid(rel), attnum);
+				ObjectAddressSet(referenced, CompressionMethodRelationId, newCm);
+				recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+			}
+		}
+
+		if (newOptionsIsNull)
+			nulls[Anum_pg_attribute_attcmoptions - 1] = true;
+		else
+			values[Anum_pg_attribute_attcmoptions - 1] = newOptionsDatum;
+		replace[Anum_pg_attribute_attcmoptions - 1] = true;
+
+		newtuple = heap_modify_tuple(tuple, RelationGetDescr(attrel),
+									 values, nulls, replace);
+
+		simple_heap_update(attrel, &newtuple->t_self, newtuple);
+		CatalogUpdateIndexes(attrel, newtuple);
+
+		heap_freetuple(newtuple);
+
+		InvokeObjectPostAlterHook(RelationRelationId,
+								  RelationGetRelid(rel),
+								  atttableform->attnum);
+
+		tab->rewrite |= AT_REWRITE_COLUMN_REWRITE;
+	}
+
+	if (newCmr != NULL)
+		pfree(newCmr);
+
+	ReleaseSysCache(tuple);
+
+	heap_close(attrel, RowExclusiveLock);
+}
+
 
 /*
  * Preparation phase for SET LOGGED/UNLOGGED

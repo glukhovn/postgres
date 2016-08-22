@@ -601,7 +601,8 @@ CheckAttributeType(const char *attname,
 void
 InsertPgAttributeTuple(Relation pg_attribute_rel,
 					   Form_pg_attribute new_attribute,
-					   CatalogIndexState indstate)
+					   CatalogIndexState indstate,
+					   Datum compressionOptions)
 {
 	Datum		values[Natts_pg_attribute];
 	bool		nulls[Natts_pg_attribute];
@@ -630,12 +631,14 @@ InsertPgAttributeTuple(Relation pg_attribute_rel,
 	values[Anum_pg_attribute_attinhcount - 1] = Int32GetDatum(new_attribute->attinhcount);
 	values[Anum_pg_attribute_attcollation - 1] = ObjectIdGetDatum(new_attribute->attcollation);
 	values[Anum_pg_attribute_attcompression - 1] = ObjectIdGetDatum(new_attribute->attcompression);
+	values[Anum_pg_attribute_attcmoptions - 1] = compressionOptions;
 
 	/* start out with empty permissions and empty options */
 	nulls[Anum_pg_attribute_attacl - 1] = true;
 	nulls[Anum_pg_attribute_attoptions - 1] = true;
 	nulls[Anum_pg_attribute_attfdwoptions - 1] = true;
-	nulls[Anum_pg_attribute_attcmoptions - 1] = true;
+	nulls[Anum_pg_attribute_attcmoptions - 1] =
+			!PointerIsValid(DatumGetPointer(compressionOptions));
 
 	tup = heap_form_tuple(RelationGetDescr(pg_attribute_rel), values, nulls);
 
@@ -685,6 +688,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 	 */
 	for (i = 0; i < natts; i++)
 	{
+		Datum compressionOptions;
+
 		attr = tupdesc->attrs[i];
 		/* Fill in the correct relation OID */
 		attr->attrelid = new_rel_oid;
@@ -692,7 +697,12 @@ AddNewAttributeTuples(Oid new_rel_oid,
 		attr->attstattarget = -1;
 		attr->attcacheoff = -1;
 
-		InsertPgAttributeTuple(rel, attr, indstate);
+		compressionOptions =
+				OidIsValid(attr->attcompression)
+					? tupdesc->tdcompression[i].optionsDatum
+					: PointerGetDatum(NULL);
+
+		InsertPgAttributeTuple(rel, attr, indstate, compressionOptions);
 
 		/* Add dependency info */
 		myself.classId = RelationRelationId;
@@ -749,7 +759,8 @@ AddNewAttributeTuples(Oid new_rel_oid,
 				attStruct.attinhcount = oidinhcount;
 			}
 
-			InsertPgAttributeTuple(rel, &attStruct, indstate);
+			InsertPgAttributeTuple(rel, &attStruct, indstate,
+								   PointerGetDatum(NULL));
 		}
 	}
 

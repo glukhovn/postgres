@@ -1224,15 +1224,18 @@ JsonbcEncode(StringInfoData *buffer, const JsonValue *val)
 	(void) jsonbcEncodeValue(buffer, val, 0);
 }
 
-static void
-jsonbcAddAttr(Form_pg_attribute attr)
+static List *
+jsonbcAddAttr(Form_pg_attribute attr, List *options)
 {
 	if (getBaseType(attr->atttypid) != JSONOID)
 		elog(ERROR, "jsonbc compression method is only applicable to json type");
+	if (options != NIL)
+		elog(ERROR, "jsonbc compression method has no options");
+	return options;
 }
 
 static Datum
-jsonbcCompress(Datum value, void *ctx)
+jsonbcCompress(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
 	Json	   *json = DatumGetJsont(value);
@@ -1249,7 +1252,7 @@ jsonbcCompress(Datum value, void *ctx)
 }
 
 static Datum
-jsonbcDecompress(Datum value, void *ctx)
+jsonbcDecompress(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
 	Json *json = DatumGetJson(value, &jsonbcContainerOps);
@@ -1275,6 +1278,7 @@ jsonbc_handler(PG_FUNCTION_ARGS)
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
+	cmr->options = NULL;
 	cmr->addAttr = jsonbcAddAttr;
 	cmr->dropAttr = NULL;
 	cmr->compress = jsonbcCompress;

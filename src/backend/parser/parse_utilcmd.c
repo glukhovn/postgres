@@ -655,6 +655,26 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 
 		cxt->alist = lappend(cxt->alist, stmt);
 	}
+
+	if (column->compression != NULL)
+	{
+		AlterTableStmt *stmt;
+		AlterTableCmd *cmd;
+
+		cmd = makeNode(AlterTableCmd);
+		cmd->subtype = AT_AlterColumnCompression;
+		cmd->name = column->colname;
+		cmd->def = (Node *) column->compression;
+		cmd->behavior = DROP_RESTRICT;
+		cmd->missing_ok = false;
+
+		stmt = makeNode(AlterTableStmt);
+		stmt->relation = cxt->relation;
+		stmt->relkind = OBJECT_TABLE;
+		stmt->cmds = list_make1(cmd);
+
+		cxt->alist = lappend(cxt->alist, stmt);
+	}
 }
 
 /*

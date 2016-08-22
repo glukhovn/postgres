@@ -3016,7 +3016,7 @@ jsontContainerOps =
 };
 
 static Datum
-jsontCompress(Datum value, void *ctx)
+jsontCompress(Datum value, CompressionOptions options)
 {
 	Json *json = DatumGetJsont(value);
 	char *str = JsonToCString(JsonRoot(json));
@@ -3030,6 +3030,7 @@ JsonGetCMR()
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
+	cmr->options = NULL;
 	cmr->addAttr = NULL;
 	cmr->dropAttr = NULL;
 	cmr->compress = jsontCompress;

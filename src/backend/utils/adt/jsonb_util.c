@@ -2049,14 +2049,17 @@ jsonbContainerOps =
 };
 
 static void
-jsonbAddAttr(Form_pg_attribute attr)
+jsonbAddAttr(Form_pg_attribute attr, List *options)
 {
 	if (getBaseType(attr->atttypid) != JSONOID)
 		elog(ERROR, "jsonb compression method is only applicable to json type");
+
+	if (options != NIL)
+		elog(ERROR, "jsonb compression method has no options");
 }
 
 static Datum
-jsonbCompressJsont(Datum value, void *ctx)
+jsonbCompressJsont(Datum value, CompressionOptions options)
 {
 #ifdef JSON_FULL_DECOMPRESSION
 	text	   *js = DatumGetTextP(value);
@@ -2074,7 +2077,7 @@ jsonbCompressJsont(Datum value, void *ctx)
 }
 
 static Datum
-jsonbCompressJsonb(Datum value, void *ctx)
+jsonbCompressJsonb(Datum value, CompressionOptions options)
 {
 #ifdef JSON_FULL_DECOMPRESSION
 	Jsonb	   *jb = DatumGetJsonb(value);
@@ -2089,7 +2092,7 @@ jsonbCompressJsonb(Datum value, void *ctx)
 }
 
 static Datum
-jsonbDecompress(Datum value, void *ctx)
+jsonbDecompress(Datum value, CompressionOptions options)
 {
 #ifdef JSON_FULL_DECOMPRESSION
 	JsonContainerData	jsc;
@@ -2115,6 +2118,7 @@ JsonbGetCMR()
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
+	cmr->options = NULL;
 	cmr->addAttr = NULL;
 	cmr->dropAttr = NULL;
 	cmr->compress = jsonbCompressJsonb;
@@ -2128,6 +2132,7 @@ jsonb_handler(PG_FUNCTION_ARGS)
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
+	cmr->options = NULL;
 	cmr->addAttr = jsonbAddAttr;
 	cmr->dropAttr = NULL;
 	cmr->compress = jsonbCompressJsont;

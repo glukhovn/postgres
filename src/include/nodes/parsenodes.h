@@ -1534,7 +1534,8 @@ typedef enum AlterTableType
 	AT_DisableRowSecurity,		/* DISABLE ROW SECURITY */
 	AT_ForceRowSecurity,		/* FORCE ROW SECURITY */
 	AT_NoForceRowSecurity,		/* NO FORCE ROW SECURITY */
-	AT_GenericOptions			/* OPTIONS (...) */
+	AT_GenericOptions,			/* OPTIONS (...) */
+	AT_AlterColumnCompression,	/* ALTER COLUMN name COMPRESSED cm WITH (...) */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt
