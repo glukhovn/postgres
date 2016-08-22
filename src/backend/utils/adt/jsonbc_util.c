@@ -248,7 +248,7 @@ jsonbcInitContainer(JsonContainerData *jc, JsonbcContainer *jbc, int len)
 }
 
 static void
-jsonbcInit(JsonContainerData *jc, Datum value)
+jsonbcInit(JsonContainerData *jc, Datum value, CompressionOptions options)
 {
 	Jsonbc *jb = DatumGetJsonbc(value);
 
@@ -1209,6 +1209,7 @@ jsonbcGetArraySize(JsonContainer *jc)
 JsonContainerOps
 jsonbcContainerOps =
 {
+	NULL,
 	jsonbcInit,
 	JsonbcIteratorInit,
 	jsonbcFindKeyInObject,
@@ -1219,7 +1220,8 @@ jsonbcContainerOps =
 };
 
 void
-JsonbcEncode(StringInfoData *buffer, const JsonValue *val)
+JsonbcEncode(StringInfoData *buffer, const JsonValue *val,
+			 CompressionOptions options)
 {
 	(void) jsonbcEncodeValue(buffer, val, 0);
 }
@@ -1242,11 +1244,11 @@ jsonbcCompress(Datum value, CompressionOptions options)
 	JsonValue	jv;
 	Jsonbc	   *jsonbc;
 	JsonToJsonValue(json, &jv);
-	jsonbc = JsonValueToJsonbc(&jv);
+	jsonbc = JsonValueToJsonbc(&jv, options);
 #else
 	text	   *json = DatumGetTextP(value);
 	JsonValue  *jv = JsonValueFromCString(VARDATA(json), VARSIZE(json) - VARHDRSZ);
-	Jsonbc	   *jsonbc = JsonValueToJsonbc(jv);
+	Jsonbc	   *jsonbc = JsonValueToJsonbc(jv, options);
 #endif
 	return JsonbcGetDatum(jsonbc);
 }
@@ -1255,14 +1257,14 @@ static Datum
 jsonbcDecompress(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
-	Json *json = DatumGetJson(value, &jsonbcContainerOps);
+	Json *json = DatumGetJson(value, &jsonbcContainerOps, options);
 	return JsonGetDatum(json);
 #else
 	JsonContainerData	jc;
 	Datum				res;
 	char			   *json;
 
-	jsonbcInit(&jc, value);
+	jsonbcInit(&jc, value, options);
 
 	json = JsonToCString(&jc);
 	res = PointerGetDatum(cstring_to_text(json));

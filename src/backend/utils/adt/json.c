@@ -2607,7 +2607,7 @@ jsontInitContainer(JsonContainerData *jc, char *json, int len,
 }
 
 static void
-jsontInit(JsonContainerData *jc, Datum value)
+jsontInit(JsonContainerData *jc, Datum value, CompressionOptions options)
 {
 	text		   *json = DatumGetTextP(value);
 	JsonLexContext *lex = makeJsonLexContext(json, false);
@@ -3006,6 +3006,7 @@ jsontGetArraySize(JsonContainer *jc)
 JsonContainerOps
 jsontContainerOps =
 {
+	NULL,
 	jsontInit,
 	JsontIteratorInit,
 	jsonFindKeyInObject,

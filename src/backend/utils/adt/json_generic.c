@@ -11,6 +11,9 @@
 #include "utils/json_generic.h"
 #include "utils/memutils.h"
 
+static Json *JsonExpand(Datum value, JsonContainerOps *ops,
+						CompressionOptions opts);
+
 static JsonContainerOps jsonvContainerOps;
 
 #if 0
@@ -500,6 +503,7 @@ static JsonContainerOps
 jsonvContainerOps =
 {
 		NULL,
+		NULL,
 		jsonvIteratorInit,
 		jsonvFindKeyInObject,
 		jsonvFindValueInArray,
@@ -537,13 +541,15 @@ typedef struct varatt_extended_json
 {
 	varatt_extended_hdr vaext;
 	char				type;
-	char				params[FLEXIBLE_ARRAY_MEMBER];
+	char				data[FLEXIBLE_ARRAY_MEMBER];
 } varatt_extended_json;
 
 static Size
 jsonGetExtendedSize(JsonContainer *jc)
 {
-	return VARHDRSZ_EXTERNAL + offsetof(varatt_extended_json, params) + jc->len;
+	return VARHDRSZ_EXTERNAL + offsetof(varatt_extended_json, data) +
+			jc->len + (jc->ops->compressionOps ?
+						jc->ops->compressionOps->encodeOptions(jc, NULL) : 0);
 }
 
 #define JsonContainerGetType(jc) \
@@ -562,6 +568,7 @@ jsonWriteExtended(JsonContainer *jc, void *ptr, Size allocated_size)
 {
 	varatt_extended_json	extjs,
 						   *pextjs;
+	Size					optionsSize;
 
 	Assert(allocated_size >= jsonGetExtendedSize(jc));
 
@@ -571,12 +578,16 @@ jsonWriteExtended(JsonContainer *jc, void *ptr, Size allocated_size)
 
 	SET_VARTAG_EXTERNAL(ptr, VARTAG_EXTENDED);
 	pextjs = (varatt_extended_json *) VARDATA_EXTERNAL(ptr);
-	memcpy(pextjs, &extjs, offsetof(varatt_extended_json, params));
-	memcpy(&pextjs->params, jc->data, jc->len);
+	memcpy(pextjs, &extjs, offsetof(varatt_extended_json, data));
+
+	optionsSize = jc->ops->compressionOps ?
+				  jc->ops->compressionOps->encodeOptions(jc, &pextjs->data) : 0;
+
+	memcpy(&pextjs->data[optionsSize], jc->data, jc->len);
 }
 
 static void
-JsonInitExtended(Json *json, void *ptr)
+JsonInitExtended(Json *json, const void *ptr)
 {
 	JsonContainerData	   *jc = JsonRoot(json);
 	varatt_extended_json   *pextjs,
@@ -586,27 +597,35 @@ JsonInitExtended(Json *json, void *ptr)
 	Assert(VARATT_IS_EXTERNAL_EXTENDED(ptr));
 
 	pextjs = (varatt_extended_json *) VARDATA_EXTERNAL(ptr);
-	memcpy(&extjs, pextjs, offsetof(varatt_extended_json, params));
+	memcpy(&extjs, pextjs, offsetof(varatt_extended_json, data));
 
 	jc->ops = JsonContainerGetOpsByType(extjs.type);
-	len = extjs.vaext.size - offsetof(varatt_extended_json, params);
+	Assert(jc->ops);
+
+	len = extjs.vaext.size - offsetof(varatt_extended_json, data);
 
 #if 1
-	ptr = palloc(VARHDRSZ + len); /* FIXME save value with varlena header */
-	SET_VARSIZE(ptr, VARHDRSZ + len);
-	memcpy(VARDATA(ptr), &pextjs->params, len);
-	json->obj.compressed = PointerGetDatum(ptr);
+	{
+		/* FIXME save value with varlena header */
+		Size	optionsSize =
+				jc->ops->compressionOps ?
+				jc->ops->compressionOps->decodeOptions(&pextjs->data,
+													   &json->obj.options) : 0;
+		void   *p = palloc(VARHDRSZ + len);
+
+		SET_VARSIZE(p, VARHDRSZ + len);
+		memcpy(VARDATA(p), &pextjs->data[optionsSize], len);
+		json->obj.compressed = PointerGetDatum(p);
+	}
 #else
 	jc->len = len;
 #if 0 /* FIXME alignment */
-	jc->data = &pextjs->params;
+	jc->data = &pextjs->data;
 #else
 	jc->data = palloc(jc->len);
-	memcpy(jc->data, &pextjs->params, jc->len);
+	memcpy(jc->data, &pextjs->data, jc->len);
 #endif
 #endif
-
-	Assert(jc->ops);
 }
 
 static void
@@ -626,7 +645,7 @@ JsonInit(Json *json)
 	else
 		json->obj.compressed = PointerGetDatum(data);
 
-	(*json->root.ops->init)(&json->root, json->obj.compressed);
+	json->root.ops->init(&json->root, json->obj.compressed, json->obj.options);
 }
 
 
@@ -748,7 +767,7 @@ jsonExpandedObjectMethods =
 };
 
 static Json *
-JsonExpand(Datum value, JsonContainerOps *ops)
+JsonExpand(Datum value, JsonContainerOps *ops, CompressionOptions options)
 {
 	MemoryContext	objcxt;
 	Json		   *json;
@@ -769,6 +788,7 @@ JsonExpand(Datum value, JsonContainerOps *ops)
 	EOH_init_header(&json->obj.eoh, &jsonExpandedObjectMethods, objcxt);
 
 	json->obj.compressed = value;
+	json->obj.options = options;
 	json->root.data = NULL;
 	json->root.len = 0;
 	json->root.ops = ops;
@@ -778,15 +798,19 @@ JsonExpand(Datum value, JsonContainerOps *ops)
 	return json;
 }
 
-Json *
-DatumGetJson(Datum value, JsonContainerOps *ops)
+static Json *
+JsonExpandDatum(Datum value, JsonContainerOps *ops, CompressionOptions options)
 {
-	Json *json = VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(value))
+	return VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(value))
 					? (Json *) DatumGetEOHP(value)
-					: JsonExpand(value, ops);
+					: JsonExpand(value, ops, options);
+}
 
+Json *
+DatumGetJson(Datum value, JsonContainerOps *ops, CompressionOptions options)
+{
+	Json *json = JsonExpandDatum(value, ops, options);
 	JsonInit(json);
-
 	return json;
 }
 
@@ -795,13 +819,14 @@ JsonValueToJson(JsonValue *val)
 {
 	if (val->type == jbvBinary)
 	{
-		Json *json = JsonExpand(PointerGetDatum(NULL), NULL);
-		json->root = *val->val.binary.data;
+		JsonContainer  *jc = val->val.binary.data;
+		Json		   *json = JsonExpand(PointerGetDatum(NULL), jc->ops, NULL);
+		json->root = *jc;
 		return json;
 	}
 	else
 	{
-		Json *json = JsonExpand(PointerGetDatum(NULL), &jsonvContainerOps);
+		Json *json = JsonExpand(PointerGetDatum(NULL), &jsonvContainerOps, NULL);
 		jsonvInitContainer(&json->root, val);
 		return json;
 	}
