@@ -681,7 +681,7 @@ jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
 	{
 		Assert(JBE_ISCONTAINER(entry));
 		result->type = jbvBinary;
-		result->val.binary.data = palloc(sizeof(JsonContainerData));
+		result->val.binary.data = JsonContainerAlloc();
 		jsonbcInitContainer((JsonContainerData *) result->val.binary.data,
 							(JsonbcContainer *)(base + offset),
 							JBE_LENGTH(entry),
