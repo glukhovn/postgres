@@ -509,7 +509,7 @@ jsonvContainerOps =
 		jsonvFindValueInArray,
 		jsonvGetArrayElement,
 		jsonvGetArraySize,
-		JsonbToCString,
+		JsonbToCStringRaw,
 };
 
 JsonValue *
@@ -658,7 +658,7 @@ jsonGetFlatSize2(Json *json)
 {
 	Size		size;
 #ifdef JSON_FLATTEN_INTO_JSON
-	char	   *str = JsonToCString(&json->root);
+	char	   *str = JsonToCString(JsonRoot(json));
 	size = VARHDRSZ + strlen(str);
 	pfree(str);
 #else

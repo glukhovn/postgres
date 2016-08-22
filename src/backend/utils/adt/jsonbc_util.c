@@ -1290,7 +1290,7 @@ jsonbcContainerOps =
 	jsonbcFindValueInArray,
 	jsonbcGetArrayElement,
 	jsonbcGetArraySize,
-	JsonbToCString,
+	JsonbToCStringRaw
 };
 
 void
