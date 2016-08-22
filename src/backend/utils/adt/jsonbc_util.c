@@ -19,6 +19,8 @@
 #include "access/hash.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
+#include "commands/defrem.h"
+#include "nodes/makefuncs.h"
 #include "utils/builtins.h"
 #include "utils/jsonb.h"
 #include "utils/json_generic.h"
@@ -105,19 +107,20 @@ typedef struct JsonbcPair
 extern bool numeric_get_small(Numeric value, uint32 *out);
 extern Numeric small_to_numeric(uint32 value);
 
-static JEntry jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val, int level);
-
 extern Datum jsonbc_handler(PG_FUNCTION_ARGS);
 
-static int32
-convertKeyNameToId(const JsonValue *string)
+static JEntry jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val,
+								int level, JsonbcDictId dict);
+
+static JsonbcKeyId
+jsonbcConvertKeyNameToId(JsonbcDictId dict, const JsonValue *string)
 {
-	KeyName	keyName;
+	JsonbcKeyName	keyName;
 
 	keyName.s = string->val.string.val;
 	keyName.len = string->val.string.len;
 
-	return getIdByName(keyName);
+	return jsonbcDictGetIdByName(dict, keyName);
 }
 
 #define MAX_VARBYTE_SIZE 5
@@ -231,8 +234,24 @@ jsonbcGetHeader(const JsonbcContainer *jbc, const unsigned char **pptr)
 	return header;
 }
 
+#define GetJsonbcDictIdFromCompressionOptions(options) \
+		((JsonbcDictId)(intptr_t)(options))
+
+#define GetCompressionOptionsFromJsonbcDictId(dict) \
+		((CompressionOptions)(intptr_t)(dict))
+
+#define GetContainerOptionsFromJsonbcDictId(dict) \
+		((void *)(intptr_t)(dict))
+
+static inline JsonbcDictId
+jsonbcGetDictId(JsonContainer *container)
+{
+	return GetJsonbcDictIdFromCompressionOptions(container->options);
+}
+
 static void
-jsonbcInitContainer(JsonContainerData *jc, JsonbcContainer *jbc, int len)
+jsonbcInitContainer(JsonContainerData *jc, JsonbcContainer *jbc, int len,
+					JsonbcDictId dictId)
 {
 	uint32 header = jsonbcGetHeader(jbc, NULL);
 	uint32 type = header & JBC_MASK;
@@ -240,6 +259,7 @@ jsonbcInitContainer(JsonContainerData *jc, JsonbcContainer *jbc, int len)
 
 	jc->ops = &jsonbcContainerOps;
 	jc->data = jbc;
+	jc->options = GetContainerOptionsFromJsonbcDictId(dictId);
 	jc->len = len;
 	jc->size = type == JBC_FSCALAR ? 1 : size ? -1 : 0;
 	jc->type = type == JBC_FOBJECT ? jbvObject :
@@ -250,27 +270,31 @@ jsonbcInitContainer(JsonContainerData *jc, JsonbcContainer *jbc, int len)
 static void
 jsonbcInit(JsonContainerData *jc, Datum value, CompressionOptions options)
 {
-	Jsonbc *jb = DatumGetJsonbc(value);
+	Jsonbc		   *jb = DatumGetJsonbc(value);
+	JsonbcDictId	dictId = GetJsonbcDictIdFromCompressionOptions(options);
 
-	jsonbcInitContainer(jc, &jb->root, VARSIZE_ANY_EXHDR(jb));
+	jsonbcInitContainer(jc, &jb->root, VARSIZE_ANY_EXHDR(jb), dictId);
 }
 
 static JEntry
-jsonbcEncodeBinary(StringInfo buffer, const JsonValue *val, int level)
+jsonbcEncodeBinary(StringInfo buffer, const JsonValue *val, int level,
+				   JsonbcDictId dict)
 {
 	JsonContainer *jc = val->val.binary.data;
 
-	if (jc->ops == &jsonbcContainerOps && !JsonContainerIsScalar(jc))
+	if (jc->ops == &jsonbcContainerOps && jsonbcGetDictId(jc) == dict &&
+		!JsonContainerIsScalar(jc))
 	{
 		appendToBuffer(buffer, jc->data, jc->len);
 		return JENTRY(CONTAINER, jc->len);
 	}
 
-	return jsonbcEncodeValue(buffer, JsonValueUnpackBinary(val), level);
+	return jsonbcEncodeValue(buffer, JsonValueUnpackBinary(val), level, dict);
 }
 
 static JEntry
-jsonbcEncodeArray(StringInfo buffer, const JsonValue *val, int level)
+jsonbcEncodeArray(StringInfo buffer, const JsonValue *val, int level,
+				  JsonbcDictId dict)
 {
 	JEntry			header;
 	int				base_offset;
@@ -308,7 +332,7 @@ jsonbcEncodeArray(StringInfo buffer, const JsonValue *val, int level)
 		 * Convert element, producing a JEntry and appending its
 		 * variable-length data to buffer
 		 */
-		meta = jsonbcEncodeValue(buffer, elem, level + 1);
+		meta = jsonbcEncodeValue(buffer, elem, level + 1, dict);
 
 		if (ptr + varbyte_size(meta) > chunk_end)
 		{
@@ -391,7 +415,8 @@ compareJsonbcPair(const void *a, const void *b, void *binequal)
 }
 
 static JEntry
-jsonbcEncodeObject(StringInfo buffer, const JsonValue *val, int level)
+jsonbcEncodeObject(StringInfo buffer, const JsonValue *val, int level,
+				   JsonbcDictId dict)
 {
 	int			base_offset;
 	int			i;
@@ -421,7 +446,7 @@ jsonbcEncodeObject(StringInfo buffer, const JsonValue *val, int level)
 
 		for (i = 0; i < nPairs; i++)
 		{
-			jbcpairs[i].key = convertKeyNameToId(&jbpairs[i].key);
+			jbcpairs[i].key = jsonbcConvertKeyNameToId(dict, &jbpairs[i].key);
 			jbcpairs[i].value = jbpairs[i].value;
 			jbcpairs[i].order = jbpairs[i].order;
 		}
@@ -447,7 +472,7 @@ jsonbcEncodeObject(StringInfo buffer, const JsonValue *val, int level)
 		 * Convert value, producing a JEntry and appending its variable-length
 		 * data to buffer
 		 */
-		meta = jsonbcEncodeValue(buffer, &pair->value, level + 1);
+		meta = jsonbcEncodeValue(buffer, &pair->value, level + 1, dict);
 
 		key = pair->key;
 		/* key = convertKeyNameToId(&pair->key); */
@@ -574,7 +599,8 @@ jsonbcEncodeScalar(StringInfo buffer, const JsonbValue *scalarVal)
  * for debugging purposes.
  */
 static JEntry
-jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val, int level)
+jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val, int level,
+				  JsonbcDictId dict)
 {
 	check_stack_depth();
 
@@ -591,11 +617,11 @@ jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val, int level)
 	if (IsAJsonbScalar(val))
 		return jsonbcEncodeScalar(buffer, val);
 	else if (val->type == jbvArray)
-		return jsonbcEncodeArray(buffer, val, level);
+		return jsonbcEncodeArray(buffer, val, level, dict);
 	else if (val->type == jbvObject)
-		return jsonbcEncodeObject(buffer, val, level);
+		return jsonbcEncodeObject(buffer, val, level, dict);
 	else if (val->type == jbvBinary)
-		return jsonbcEncodeBinary(buffer, val, level);
+		return jsonbcEncodeBinary(buffer, val, level, dict);
 	else
 	{
 		elog(ERROR, "unknown type of jsonb container");
@@ -617,7 +643,7 @@ jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val, int level)
  */
 static void
 jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
-				JsonValue *result)
+				JsonValue *result, JsonbcDictId dictId)
 {
 	if (JBE_ISNULL(entry))
 	{
@@ -637,7 +663,7 @@ jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
 	}
 	else if (JBE_ISINTEGER(entry))
 	{
-		unsigned char *ptr = (unsigned char *)base + offset;
+		const unsigned char *ptr = (const unsigned char *) base + offset;
 		result->type = jbvNumeric;
 		result->val.numeric = small_to_numeric(varbyte_decode(&ptr));
 	}
@@ -658,7 +684,8 @@ jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
 		result->val.binary.data = palloc(sizeof(JsonContainerData));
 		jsonbcInitContainer((JsonContainerData *) result->val.binary.data,
 							(JsonbcContainer *)(base + offset),
-							JBE_LENGTH(entry));
+							JBE_LENGTH(entry),
+							dictId);
 		result->val.binary.len = result->val.binary.data->len;
 	}
 }
@@ -667,6 +694,7 @@ typedef struct JsonbcContainterIterator
 {
 	JsonIterator		ji;
 
+	JsonbcDictId		dict;
 	uint32				childrenSize;
 	uint32				curKey;
 	bool				isScalar;		/* Pseudo-array scalar value? */
@@ -794,7 +822,8 @@ recurse:
 				it->chunkEnd += JBC_OFFSETS_CHUNK_SIZE;
 			}
 
-			jsonbcFillValue(entry, it->dataProper, it->curDataOffset, val);
+			jsonbcFillValue(entry, it->dataProper, it->curDataOffset, val,
+							it->dict);
 
 			it->curDataOffset += JBE_LENGTH(entry);
 
@@ -844,6 +873,8 @@ recurse:
 			}
 			else
 			{
+				JsonbcKeyName keyName;
+
 				if (it->childrenPtr >= it->chunkEnd)
 				{
 					it->childrenPtr = it->chunkEnd;
@@ -864,7 +895,7 @@ recurse:
 
 				it->curKey += keyIncr;
 
-				KeyName keyName = getNameById(it->curKey);
+				keyName = jsonbcDictGetNameById(it->dict, it->curKey);
 
 				val->type = jbvString;
 				val->val.string.val = keyName.s;
@@ -881,7 +912,8 @@ recurse:
 
 			entry = varbyte_decode(&it->childrenPtr);
 
-			jsonbcFillValue(entry, it->dataProper, it->curDataOffset, val);
+			jsonbcFillValue(entry, it->dataProper, it->curDataOffset, val,
+							it->dict);
 
 			it->curDataOffset += JBE_LENGTH(entry);
 
@@ -921,6 +953,7 @@ jsonbcIteratorFromContainer(JsonContainer *jsc,
 	it->ji.parent = &parent->ji;
 	it->ji.next = JsonbcIteratorNext;
 
+	it->dict = jsonbcGetDictId(jsc);
 	it->childrenSize = (header >> JBC_CSHIFT);
 
 	/* Array starts just after header */
@@ -970,28 +1003,33 @@ typedef struct JsonbcIterator
 	 const unsigned char   *nextChunk;
 	 uint32					offset;
 	 JEntry					entry;
+	 JsonbcDictId			dict;
 } JsonbcIterator;
 
 static inline bool
-jsonbcIteratorInit(JsonbcIterator *it, const JsonbcContainer *cont,
+jsonbcIteratorInit(JsonbcIterator *it, JsonContainer *jc,
 				   bool array, bool error)
 {
 	const unsigned char	   *ptr;
+	JsonbcContainer  	   *cont = jc->data;
 	uint32					header = jsonbcGetHeader(cont, &ptr);
 
 	if (array ? (header & JBC_MASK) != JBC_FARRAY &&
 				(header & JBC_MASK) != JBC_FSCALAR
 			  : (header & JBC_MASK) != JBC_FOBJECT)
+	{
 		if (error)
 			elog(ERROR, "not a jsonbc %s", array ? "array" : "object");
 		else
 			return false;
+	}
 
 	it->ptr = ptr;
 	it->end = ptr + (header >> JBC_CSHIFT);
 	it->nextChunk = ptr + JBC_OFFSETS_CHUNK_SIZE;
 	it->offset = 0;
 	it->entry = 0;
+	it->dict = jsonbcGetDictId(jc);
 
 	return (header >> JBC_CSHIFT) != 0;
 }
@@ -1044,7 +1082,8 @@ jsonbcIteratorCurrentValue(const JsonbcIterator *it, JsonValue *result)
 	if (!result)
 		result = palloc(sizeof(JsonValue));
 
-	jsonbcFillValue(it->entry, (const char *) it->end, it->offset, result);
+	jsonbcFillValue(it->entry, (const char *) it->end, it->offset, result,
+					it->dict);
 
 	return result;
 }
@@ -1146,15 +1185,15 @@ static JsonValue *
 jsonbcFindKeyInObject(JsonContainer *jc, const JsonValue *key)
 {
 	JsonbcIterator	it;
-	int32			keyId;
+	JsonbcKeyId		keyId;
 
 	/* Object key passed by caller must be a string */
 	Assert(key->type == jbvString);
 
-	if (!jsonbcIteratorInit(&it, jc->data, false, false))
+	if (!jsonbcIteratorInit(&it, jc, false, false))
 		return NULL;
 
-	keyId = convertKeyNameToId(key);
+	keyId = jsonbcConvertKeyNameToId(it.dict, key);
 
 	return jsonbcIteratorFindKey(&it, keyId);
 }
@@ -1165,7 +1204,7 @@ jsonbcFindValueInArray(JsonContainer *jc, const JsonValue *key)
 	JsonbcIterator	it;
 	JsonValue	   *result;
 
-	if (!jsonbcIteratorInit(&it, jc->data, true, false))
+	if (!jsonbcIteratorInit(&it, jc, true, false))
 		return NULL;
 
 	result = palloc(sizeof(JsonbValue));
@@ -1183,7 +1222,7 @@ jsonbcGetArrayElement(JsonContainer *jc, uint32 index)
 {
 	JsonbcIterator	it;
 
-	if (!jsonbcIteratorInit(&it, jc->data, true, true))
+	if (!jsonbcIteratorInit(&it, jc, true, true))
 		return NULL;
 
 	return jsonbcIteratorGetIthElement(&it, index);
@@ -1195,7 +1234,7 @@ jsonbcGetArraySize(JsonContainer *jc)
 	JsonbcIterator	it;
 	uint32			size;
 
-	if (!jsonbcIteratorInit(&it, jc->data, true, true))
+	if (!jsonbcIteratorInit(&it, jc, true, true))
 		return 0;
 
 	size = jsonbcIteratorSkipChunksToIth(&it, UINT32_MAX);
@@ -1206,10 +1245,45 @@ jsonbcGetArraySize(JsonContainer *jc)
 	return size;
 }
 
+static Size
+jsonbcEncodeOptions(JsonContainer *jc, void *buf)
+{
+	if (buf)
+	{
+		JsonbcDictId dict = jsonbcGetDictId(jc);
+		memcpy(buf, &dict, sizeof(JsonbcDictId));
+	}
+
+	return sizeof(JsonbcDictId);
+}
+
+static Size
+jsonbcDecodeOptions(const void *buf, CompressionOptions *options)
+{
+	JsonbcDictId dict;
+	memcpy(&dict, buf, sizeof(JsonbcDictId));
+	*options = GetCompressionOptionsFromJsonbcDictId(dict);
+	return sizeof(JsonbcDictId);
+}
+
+static bool
+jsonbcOptionsAreEqual(JsonContainer *jc, CompressionOptions options)
+{
+	return jsonbcGetDictId(jc) == GetJsonbcDictIdFromCompressionOptions(options);
+}
+
+static JsonCompressionOptionsOps
+jsonbcCompressionOptionsOps =
+{
+	jsonbcEncodeOptions,
+	jsonbcDecodeOptions,
+	jsonbcOptionsAreEqual
+};
+
 JsonContainerOps
 jsonbcContainerOps =
 {
-	NULL,
+	&jsonbcCompressionOptionsOps,
 	jsonbcInit,
 	JsonbcIteratorInit,
 	jsonbcFindKeyInObject,
@@ -1223,17 +1297,9 @@ void
 JsonbcEncode(StringInfoData *buffer, const JsonValue *val,
 			 CompressionOptions options)
 {
-	(void) jsonbcEncodeValue(buffer, val, 0);
-}
+	JsonbcDictId	dict = GetJsonbcDictIdFromCompressionOptions(options);
 
-static List *
-jsonbcAddAttr(Form_pg_attribute attr, List *options)
-{
-	if (getBaseType(attr->atttypid) != JSONOID)
-		elog(ERROR, "jsonbc compression method is only applicable to json type");
-	if (options != NIL)
-		elog(ERROR, "jsonbc compression method has no options");
-	return options;
+	(void) jsonbcEncodeValue(buffer, val, 0, dict);
 }
 
 static Datum
@@ -1241,15 +1307,14 @@ jsonbcCompress(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
 	Json	   *json = DatumGetJsont(value);
-	JsonValue	jv;
-	Jsonbc	   *jsonbc;
-	JsonToJsonValue(json, &jv);
-	jsonbc = JsonValueToJsonbc(&jv, options);
+	JsonValue	jvbuf;
+	JsonValue  *jv = JsonToJsonValue(json, &jvbuf);
 #else
 	text	   *json = DatumGetTextP(value);
-	JsonValue  *jv = JsonValueFromCString(VARDATA(json), VARSIZE(json) - VARHDRSZ);
-	Jsonbc	   *jsonbc = JsonValueToJsonbc(jv, options);
+	JsonValue  *jv = JsonValueFromCString(VARDATA(json),
+										  VARSIZE(json) - VARHDRSZ);
 #endif
+	Jsonbc	   *jsonbc = JsonValueToJsonbc(jv, options);
 	return JsonbcGetDatum(jsonbc);
 }
 
@@ -1275,14 +1340,107 @@ jsonbcDecompress(Datum value, CompressionOptions options)
 #endif
 }
 
+#define JSONBC_DICT_ID_OPTION "dict_id"
+
+static JsonbcDictId
+jsonbcOptionsProcess(List *options)
+{
+	ListCell   *cell;
+	int32		dictId = -1;
+
+	foreach(cell, options)
+	{
+		DefElem    *def = lfirst(cell);
+
+		if (!strcmp(def->defname, JSONBC_DICT_ID_OPTION))
+		{
+			dictId = pg_atoi(defGetString(def), 4, 0);
+			if (dictId < 0)
+				elog(ERROR,
+					 "jsonbc compression method: invalid value for option '%s'",
+					 def->defname);
+		}
+		else
+			elog(ERROR, "jsonbc compression method: unrecognized option '%s'",
+				 def->defname);
+	}
+
+	if (dictId == -1)
+		elog(ERROR, "jsonbc compression method: option '%s' is required",
+			 JSONBC_DICT_ID_OPTION);
+
+	return dictId;
+}
+
+static List *
+jsonbcOptionsValidate(Form_pg_attribute attr, List *options)
+{
+	if (getBaseType(attr->atttypid) != JSONOID)
+		elog(ERROR, "jsonbc compression method is only applicable to json type");
+
+	if (options != NIL)
+		jsonbcOptionsProcess(options);
+	else
+	{
+		JsonbcDictId	dictId = jsonbcDictCreate(attr);
+		char			dictIdStr[20];
+		DefElem		   *def;
+		Value		   *val;
+
+		snprintf(dictIdStr, sizeof(dictIdStr), "%d", dictId);
+		val = makeString(pstrdup(dictIdStr));
+		def = makeDefElem(pstrdup(JSONBC_DICT_ID_OPTION), (Node *) val);
+		options = list_make1(def);
+	}
+
+	return options;
+}
+
+static CompressionOptions
+jsonbcOptionsConvert(Form_pg_attribute attr, List *options)
+{
+	return GetCompressionOptionsFromJsonbcDictId(jsonbcOptionsProcess(options));
+}
+
+static bool
+jsonbcOptionsEqual(CompressionOptions options1, CompressionOptions options2)
+{
+	return GetJsonbcDictIdFromCompressionOptions(options1) ==
+		   GetJsonbcDictIdFromCompressionOptions(options2);
+}
+
+static CompressionMethodOptionsRoutines
+jsonbcCompressionMethodOptionsRoutines =
+{
+	jsonbcOptionsValidate,
+	jsonbcOptionsConvert,
+	NULL,
+	NULL,
+	jsonbcOptionsEqual,
+};
+
+static void
+jsonbcAddAttr(Form_pg_attribute attr, List *options)
+{
+	JsonbcDictId dict = jsonbcOptionsProcess(options);
+	jsonbcDictAddRef(attr, dict);
+}
+
+static void
+jsonbcDropAttr(Form_pg_attribute attr, List *options)
+{
+	JsonbcDictId dict = jsonbcOptionsProcess(options);
+	jsonbcDictRemoveRef(attr, dict);
+}
+
 Datum
 jsonbc_handler(PG_FUNCTION_ARGS)
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
-	cmr->options = NULL;
+	cmr->options = &jsonbcCompressionMethodOptionsRoutines;
 	cmr->addAttr = jsonbcAddAttr;
-	cmr->dropAttr = NULL;
+	cmr->dropAttr = jsonbcDropAttr;
 	cmr->compress = jsonbcCompress;
 	cmr->decompress = jsonbcDecompress;
 
