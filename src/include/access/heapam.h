@@ -179,6 +179,9 @@ extern void simple_heap_update(Relation relation, ItemPointer otid,
 
 extern void heap_sync(Relation relation);
 
+extern bool tuple_attr_compression_equals(TupleDesc td1, TupleDesc td2,
+										  AttrNumber attidx);
+
 /* in heap/pruneheap.c */
 extern void heap_page_prune_opt(Relation relation, Buffer buffer);
 extern int heap_page_prune(Relation relation, Buffer buffer,

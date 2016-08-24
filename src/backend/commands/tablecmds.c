@@ -32,6 +32,7 @@
 #include "catalog/objectaccess.h"
 #include "catalog/pg_am.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_compression.h"
 #include "catalog/pg_constraint.h"
 #include "catalog/pg_constraint_fn.h"
 #include "catalog/pg_depend.h"
@@ -4081,6 +4082,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		List	   *dropped_attrs = NIL;
 		ListCell   *lc;
 		Snapshot	snapshot;
+		bool	   *recompress;
 
 		if (newrel)
 			ereport(DEBUG1,
@@ -4129,6 +4131,22 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 				dropped_attrs = lappend_int(dropped_attrs, i);
 		}
 
+		if (tab->newvals != NIL)
+			recompress = NULL; /* recompress all */
+		else
+		{
+			int natts = Min(oldTupDesc->natts, newTupDesc->natts);
+
+			recompress = palloc0(sizeof(bool) * oldTupDesc->natts);
+
+			for (i = 0; i < natts; i++)
+				if (!tuple_attr_compression_equals(oldTupDesc, newTupDesc, i))
+					recompress[i] = true;
+
+			foreach(lc, dropped_attrs)
+				recompress[lfirst_int(lc)] = false;
+		}
+
 		/*
 		 * Scan through the rows, generating a new row if needed and then
 		 * checking all the constraints.
@@ -4149,7 +4167,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 				Oid			tupOid = InvalidOid;
 
 				/* Extract data from old tuple */
-				heap_deform_tuple(tuple, oldTupDesc, values, isnull);
+				heap_deform_tuple_decompress(tuple, oldTupDesc, values, isnull,
+											 recompress);
 				if (oldTupDesc->tdhasoid)
 					tupOid = HeapTupleGetOid(tuple);
 
@@ -4178,7 +4197,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 				 * Form the new tuple. Note that we don't explicitly pfree it,
 				 * since the per-tuple memory context will be reset shortly.
 				 */
-				tuple = heap_form_tuple(newTupDesc, values, isnull);
+				tuple = heap_form_tuple_compress(newTupDesc, values, isnull,
+												 recompress);
 
 				/* Preserve OID, if any */
 				if (newTupDesc->tdhasoid)
