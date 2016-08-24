@@ -717,9 +717,10 @@ tuple_decompress_attr(TupleDesc tupdesc, int attnum, Datum value)
  * The result is allocated in the current memory context.
  */
 HeapTuple
-heap_form_tuple(TupleDesc tupleDescriptor,
-				Datum *values,
-				bool *isnull)
+heap_form_tuple_compress(TupleDesc tupleDescriptor,
+						 Datum *values,
+						 bool *isnull,
+						 bool *compress)
 {
 	HeapTuple	tuple;			/* return tuple */
 	HeapTupleHeader td;			/* tuple data */
@@ -749,7 +750,8 @@ heap_form_tuple(TupleDesc tupleDescriptor,
 			if (!tupleDescriptor->tdcompression)
 				break;
 		}
-		else if ((OidIsValid(tupleDescriptor->attrs[i]->attcompression) ||
+		else if (compress ? compress[i] :
+				 (OidIsValid(tupleDescriptor->attrs[i]->attcompression) ||
 				  (tupleDescriptor->attrs[i]->attlen == -1 &&
 				   OidIsValid(tupleDescriptor->attrs[i]->attrelid) &&
 				   tupleDescriptor->tdcompression &&
@@ -1523,10 +1525,17 @@ minimal_tuple_from_heap_tuple(HeapTuple htup)
 }
 
 #undef heap_deform_tuple
+#undef heap_form_tuple
 
 extern void
 heap_deform_tuple(HeapTuple tuple, TupleDesc tupleDesc,
 				  Datum *values, bool *isnull)
 {
 	heap_deform_tuple_decompress(tuple, tupleDesc, values, isnull, NULL);
+}
+
+extern HeapTuple
+heap_form_tuple(TupleDesc tupdesc, Datum *values, bool *isnull)
+{
+	return heap_form_tuple_compress(tupdesc, values, isnull, NULL);
 }
