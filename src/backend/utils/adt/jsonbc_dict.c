@@ -6,20 +6,33 @@
  */
 
 #include "postgres.h"
+#include "jsonbc_dict.h"
 #include "access/hash.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "utils/builtins.h"
 #include "utils/hsearch.h"
+#include "utils/json_generic.h"
 #include "utils/memutils.h"
+#ifdef JSONBC_DICT_SEQUENCES
+#include "access/xact.h"
+#include "catalog/dependency.h"
+#include "commands/defrem.h"
+#include "commands/sequence.h"
+#include "nodes/makefuncs.h"
+#include "utils/lsyscache.h"
+#include "utils/rel.h"
+#endif
 
-#include "jsonbc_dict.h"
+#define JSONBC_DICT_TAB "pg_jsonbc_dict"
 
 static bool initialized = false;
 static HTAB *idToNameHash, *nameToIdHash;
 static SPIPlanPtr savedPlanInsert = NULL;
 static SPIPlanPtr savedPlanSelect = NULL;
+#ifndef JSONBC_DICT_SEQUENCES
 static SPIPlanPtr savedPlanNewDict = NULL;
+#endif
 
 typedef struct IdToNameKey
 {
@@ -130,8 +143,13 @@ jsonbcDictAddEntry(JsonbcDictId dict, JsonbcKeyId id, JsonbcKeyName name)
 static JsonbcKeyId
 jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 {
+#ifdef JSONBC_DICT_SEQUENCES
+	Oid		argTypes[3] = {JsonbcDictIdTypeOid, TEXTOID, JsonbcKeyIdTypeOid};
+	Datum	args[3];
+#else
 	Oid		argTypes[2] = {JsonbcDictIdTypeOid, TEXTOID};
 	Datum	args[2];
+#endif
 	JsonbcKeyId	id;
 	bool	null;
 
@@ -141,16 +159,23 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 	{
 		savedPlanInsert = SPI_prepare(
 			"WITH select_data AS ( "
-			"	SELECT id FROM jsonbc_dict WHERE dict = $1 AND name = $2 "
+			"	SELECT id FROM "JSONBC_DICT_TAB" WHERE dict = $1 AND name = $2"
 			"), "
 			"insert_data AS ( "
-			"	INSERT INTO jsonbc_dict (dict, name) "
+#ifdef JSONBC_DICT_SEQUENCES
+			"	INSERT INTO "JSONBC_DICT_TAB" (dict, name, id) "
+			"		(SELECT $1, $2, $3 WHERE NOT EXISTS "
+			"			(SELECT id FROM select_data)) RETURNING id "
+#else
+			"	INSERT INTO "JSONBC_DICT_TAB" (dict, name) "
 			"		(SELECT $1, $2 WHERE NOT EXISTS "
 			"			(SELECT id FROM select_data)) RETURNING id "
+#endif
 			") "
 			"SELECT id FROM select_data "
 			"	UNION ALL "
-			"SELECT id FROM insert_data;", 2, argTypes);
+			"SELECT id FROM insert_data;",
+			lengthof(argTypes), argTypes);
 		if (!savedPlanInsert)
 			elog(ERROR, "Error preparing query");
 		if (SPI_keepplan(savedPlanInsert))
@@ -159,6 +184,9 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 
 	args[0] = JsonbcDictIdGetDatum(dict);
 	args[1] = PointerGetDatum(cstring_to_text_with_len(name.s, name.len));
+#ifdef JSONBC_DICT_SEQUENCES
+	args[2] = JsonbcKeyIdGetDatum((JsonbcKeyId) nextval_internal(dict));
+#endif
 
 	if (SPI_execute_plan(savedPlanInsert, args, NULL, false, 1) < 0 ||
 		SPI_processed != 1)
@@ -206,7 +234,7 @@ jsonbcDictGetNameByIdSlow(JsonbcDictId dict, JsonbcKeyId id)
 	if (!savedPlanSelect)
 	{
 		savedPlanSelect = SPI_prepare(
-			"SELECT name FROM jsonbc_dict WHERE dict = $1 AND id = $2;",
+			"SELECT name FROM "JSONBC_DICT_TAB" WHERE dict = $1 AND id = $2;",
 			2, argTypes);
 		if (!savedPlanSelect)
 			elog(ERROR, "Error preparing query");
@@ -262,16 +290,78 @@ jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
 void
 jsonbcDictAddRef(Form_pg_attribute attr, JsonbcDictId dict)
 {
+#ifdef JSONBC_DICT_SEQUENCES
+	ObjectAddress	dep;
+	ObjectAddress	ref;
+
+	ObjectAddressSet(dep, RelationRelationId, dict);
+	ObjectAddressSubSet(ref, RelationRelationId, attr->attrelid, attr->attnum);
+	recordDependencyOn(&dep, &ref, DEPENDENCY_INTERNAL);
+#endif
 }
 
 void
 jsonbcDictRemoveRef(Form_pg_attribute att, JsonbcDictId dict)
 {
+#ifdef JSONBC_DICT_SEQUENCES
+	long totalCount;
+	int	cnt = changeDependencyFor(RelationRelationId, dict,
+								  RelationRelationId, att->attrelid, att->attnum,
+								  InvalidOid, &totalCount);
+
+	Assert(cnt == 1);
+
+	if (cnt == 1 && totalCount == 1)
+	{
+		ObjectAddress seqaddr;
+		ObjectAddressSet(seqaddr, RelationRelationId, dict);
+		CommandCounterIncrement(); /* FIXME */
+		performDeletion(&seqaddr, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+	}
+#endif
 }
 
 JsonbcDictId
-jsonbcDictCreate(Form_pg_attribute att)
+jsonbcDictCreate(Form_pg_attribute attr)
 {
+#ifdef JSONBC_DICT_SEQUENCES
+	CreateSeqStmt	   *stmt = makeNode(CreateSeqStmt);
+	Relation			rel;
+#if 0
+	List			   *attnamelist;
+#endif
+	char			   *name;
+	char			   *namespace;
+	Oid					namespaceid;
+	ObjectAddress		addr;
+
+	rel = relation_open(attr->attrelid, NoLock);
+
+	namespaceid = RelationGetNamespace(rel);
+	namespace = get_namespace_name(namespaceid);
+	name = ChooseRelationName(RelationGetRelationName(rel),
+							  NameStr(attr->attname),
+							  "jsonbc_dict_seq",
+							  namespaceid);
+
+	stmt->sequence = makeRangeVar(namespace, name, -1);
+	stmt->ownerId = rel->rd_rel->relowner;
+#if 0
+	attnamelist = list_make3(makeString(namespace),
+							 makeString(RelationGetRelationName(rel)),
+							 makeString(NameStr(attr->attname)));
+	stmt->options = list_make1(makeDefElem("owned_by", (Node *) attnamelist));
+#else
+	stmt->options = NIL;
+#endif
+	stmt->if_not_exists = false;
+
+	addr = DefineSequence(stmt);
+
+	relation_close(rel, NoLock);
+
+	return addr.objectId;
+#else
 	JsonbcDictId	id;
 	bool			null;
 
@@ -280,7 +370,8 @@ jsonbcDictCreate(Form_pg_attribute att)
 	if (!savedPlanNewDict)
 	{
 		savedPlanNewDict = SPI_prepare(
-			"INSERT INTO jsonbc_dict(id) VALUES (0) RETURNING dict", 0, NULL);
+			"INSERT INTO "JSONBC_DICT_TAB" (id) VALUES (0) RETURNING dict",
+			0, NULL);
 		if (!savedPlanNewDict)
 			elog(ERROR, "jsonbc: error preparing query");
 		if (SPI_keepplan(savedPlanNewDict))
@@ -296,6 +387,7 @@ jsonbcDictCreate(Form_pg_attribute att)
 	SPI_finish();
 
 	return id;
+#endif
 }
 
 PG_FUNCTION_INFO_V1(jsonbc_get_id_by_name);
