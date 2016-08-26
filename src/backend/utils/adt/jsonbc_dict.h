@@ -5,6 +5,8 @@
 #include "catalog/pg_attribute.h"
 
 #define JSONBC_DICT_SEQUENCES
+#define JSONBC_DICT_SYSCACHE
+
 typedef int32 JsonbcKeyId;
 #define JsonbcKeyIdTypeOid	INT4OID
 #define JsonbcKeyIdGetDatum(datum)	Int32GetDatum(datum)

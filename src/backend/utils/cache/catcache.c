@@ -999,7 +999,8 @@ InitCatCachePhase2(CatCache *cache, bool touch_index)
 
 	if (touch_index &&
 		cache->id != AMOID &&
-		cache->id != AMNAME)
+		cache->id != AMNAME &&
+		cache->id != JSONBCDICTNAME)
 	{
 		Relation	idesc;
 

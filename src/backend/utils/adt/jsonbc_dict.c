@@ -7,13 +7,21 @@
 
 #include "postgres.h"
 #include "jsonbc_dict.h"
-#include "access/hash.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "utils/builtins.h"
-#include "utils/hsearch.h"
 #include "utils/json_generic.h"
 #include "utils/memutils.h"
+#ifdef JSONBC_DICT_SYSCACHE
+#include "access/htup_details.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_jsonbc_dict.h"
+#include "utils/relcache.h"
+#include "utils/syscache.h"
+#else
+#include "access/hash.h"
+#include "utils/hsearch.h"
+#endif
 #ifdef JSONBC_DICT_SEQUENCES
 #include "access/xact.h"
 #include "catalog/dependency.h"
@@ -26,6 +34,79 @@
 
 #define JSONBC_DICT_TAB "pg_jsonbc_dict"
 
+#ifdef JSONBC_DICT_SYSCACHE
+
+JsonbcKeyId
+jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
+{
+	text	   *txt = cstring_to_text_with_len(name.s, name.len);
+	HeapTuple	tuple = SearchSysCache2(JSONBCDICTNAME,
+										JsonbcDictIdGetDatum(dict),
+										PointerGetDatum(txt));
+	JsonbcKeyId	id;
+
+	if (HeapTupleIsValid(tuple))
+	{
+		id = ((Form_pg_jsonbc_dict) GETSTRUCT(tuple))->id;
+		ReleaseSysCache(tuple);
+	}
+	else
+	{
+		Datum		values[Natts_pg_jsonbc_dict];
+		bool		nulls[Natts_pg_jsonbc_dict];
+		Relation	rel;
+
+		id = (JsonbcKeyId) nextval_internal(dict);
+
+		values[Anum_pg_jsonbc_dict_dict - 1] = JsonbcDictIdGetDatum(dict);
+		values[Anum_pg_jsonbc_dict_id - 1] = JsonbcKeyIdGetDatum(id);
+		values[Anum_pg_jsonbc_dict_name - 1] = PointerGetDatum(txt);
+		MemSet(nulls, false, sizeof(nulls));
+
+		rel = relation_open(JsonbcDictionaryRelationId, RowExclusiveLock);
+
+		tuple = heap_form_tuple(RelationGetDescr(rel), values, nulls);
+
+		simple_heap_insert(rel, tuple);
+
+		CatalogUpdateIndexes(rel, tuple);
+
+		relation_close(rel, RowExclusiveLock);
+
+		heap_freetuple(tuple);
+	}
+
+	pfree(txt);
+
+	return id;
+}
+
+JsonbcKeyName
+jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
+{
+	JsonbcKeyName	name;
+	HeapTuple		tuple = SearchSysCache2(JSONBCDICTID,
+											JsonbcDictIdGetDatum(dict),
+											JsonbcKeyIdGetDatum(id));
+	if (HeapTupleIsValid(tuple))
+	{
+		text   *text = &((Form_pg_jsonbc_dict) GETSTRUCT(tuple))->name;
+
+		name.len = VARSIZE_ANY_EXHDR(text);
+		name.s = memcpy(palloc(name.len), VARDATA_ANY(text), name.len);
+
+		ReleaseSysCache(tuple);
+	}
+	else
+	{
+		name.s = NULL;
+		name.len = 0;
+	}
+
+	return name;
+}
+
+#else
 static bool initialized = false;
 static HTAB *idToNameHash, *nameToIdHash;
 static SPIPlanPtr savedPlanInsert = NULL;
@@ -286,6 +367,7 @@ jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
 
 	return found ? result->name : jsonbcDictGetNameByIdSlow(dict, id);
 }
+#endif
 
 void
 jsonbcDictAddRef(Form_pg_attribute attr, JsonbcDictId dict)
