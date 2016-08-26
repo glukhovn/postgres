@@ -115,16 +115,10 @@ jsonb_contains(PG_FUNCTION_ARGS)
 	Jsonb	   *val = PG_GETARG_JSONB(0);
 	Jsonb	   *tmpl = PG_GETARG_JSONB(1);
 
-	JsonbIterator *it1,
-			   *it2;
-
 	if (JB_ROOT_IS_OBJECT(val) != JB_ROOT_IS_OBJECT(tmpl))
 		PG_RETURN_BOOL(false);
 
-	it1 = JsonbIteratorInit(&val->root);
-	it2 = JsonbIteratorInit(&tmpl->root);
-
-	PG_RETURN_BOOL(JsonbDeepContains(&it1, &it2));
+	PG_RETURN_BOOL(JsonbDeepContains(JsonRoot(val), JsonRoot(tmpl)));
 }
 
 Datum
@@ -134,16 +128,10 @@ jsonb_contained(PG_FUNCTION_ARGS)
 	Jsonb	   *tmpl = PG_GETARG_JSONB(0);
 	Jsonb	   *val = PG_GETARG_JSONB(1);
 
-	JsonbIterator *it1,
-			   *it2;
-
 	if (JB_ROOT_IS_OBJECT(val) != JB_ROOT_IS_OBJECT(tmpl))
 		PG_RETURN_BOOL(false);
 
-	it1 = JsonbIteratorInit(&val->root);
-	it2 = JsonbIteratorInit(&tmpl->root);
-
-	PG_RETURN_BOOL(JsonbDeepContains(&it1, &it2));
+	PG_RETURN_BOOL(JsonbDeepContains(JsonRoot(val), JsonRoot(tmpl)));
 }
 
 Datum
