@@ -3587,7 +3587,8 @@ AlterTypeNamespaceInternal(Oid typeOid, Oid nspOid,
 		(isCompositeType || typform->typtype != TYPTYPE_COMPOSITE) &&
 		!isImplicitArray)
 		if (changeDependencyFor(TypeRelationId, typeOid,
-								NamespaceRelationId, oldNspOid, nspOid) != 1)
+								NamespaceRelationId, oldNspOid, 0,
+								nspOid, NULL) != 1)
 			elog(ERROR, "failed to change schema dependency for type %s",
 				 format_type_be(typeOid));
 

@@ -2658,7 +2658,7 @@ AlterExtensionNamespace(List *names, const char *newschema, Oid *oldschema)
 
 	/* update dependencies to point to the new schema */
 	changeDependencyFor(ExtensionRelationId, extensionOid,
-						NamespaceRelationId, oldNspOid, nspOid);
+						NamespaceRelationId, oldNspOid, 0, nspOid, NULL);
 
 	InvokeObjectPostAlterHook(ExtensionRelationId, extensionOid, 0);
 
