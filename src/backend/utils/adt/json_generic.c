@@ -515,6 +515,9 @@ jsonvContainerOps =
 JsonValue *
 JsonToJsonValue(Json *json, JsonValue *jv)
 {
+	if (JsonRoot(json)->ops == &jsonvContainerOps)
+		return (JsonValue *) JsonRoot(json)->data;
+
 	if (!jv)
 		jv = palloc(sizeof(JsonValue));
 
@@ -684,12 +687,12 @@ jsonFlatten(Json *json)
 	pfree(str);
 	return text;
 #else
-	JsonValue val;
-	JsonToJsonValue(json, &val);
+	JsonValue	valbuf;
+	JsonValue  *val = JsonToJsonValue(json, &valbuf);
 # ifdef JSON_FLATTEN_INTO_JSONBC
-	return JsonValueToJsonbc(&val);
+	return JsonValueToJsonbc(val);
 # else
-	return JsonValueToJsonb(&val);
+	return JsonValueToJsonb(val);
 # endif
 #endif
 }
