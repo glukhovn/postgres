@@ -267,7 +267,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		DeallocateStmt PrepareStmt ExecuteStmt
 		DropOwnedStmt ReassignOwnedStmt
 		AlterTSConfigurationStmt AlterTSDictionaryStmt
-		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt
+		CreateMatViewStmt RefreshMatViewStmt CreateAmStmt AlterTypeStmt
 
 %type <node>	select_no_parens select_with_parens select_clause
 				simple_select values_clause
@@ -276,8 +276,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <ival>	add_drop opt_asc_desc opt_nulls_order
 
 %type <node>	alter_table_cmd alter_type_cmd opt_collate_clause
-	   replica_identity
-%type <list>	alter_table_cmds alter_type_cmds
+	   replica_identity alterTypeCmd
+%type <list>	alter_table_cmds alter_type_cmds alterTypeCmds
 
 %type <dbehavior>	opt_drop_behavior
 
@@ -787,6 +787,7 @@ stmt :
 			| AlterRoleStmt
 			| AlterTSConfigurationStmt
 			| AlterTSDictionaryStmt
+			| AlterTypeStmt
 			| AlterUserMappingStmt
 			| AlterUserSetStmt
 			| AlterUserStmt
@@ -2492,6 +2493,24 @@ reloption_elem:
  * really variants of the ALTER TABLE subcommands with different spellings
  *****************************************************************************/
 
+AlterTypeStmt:
+			ALTER TYPE_P any_name alterTypeCmds
+				{
+					AlterTypeStmt *n = makeNode(AlterTypeStmt);
+					n->typeName = $3;
+					n->cmds = $4;
+					$$ = (Node *) n;
+				}
+			;
+
+alterTypeCmds:
+			alterTypeCmd						{ $$ = list_make1($1); }
+			| alterTypeCmds ',' alterTypeCmd	{ $$ = lappend($1, $3); }
+		;
+
+alterTypeCmd:
+			EMPTY
+		;
 AlterCompositeTypeStmt:
 			ALTER TYPE_P any_name alter_type_cmds
 				{

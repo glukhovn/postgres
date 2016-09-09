@@ -3111,4 +3111,22 @@ typedef struct AlterTSConfigurationStmt
 	bool		missing_ok;		/* for DROP - skip error if missing? */
 } AlterTSConfigurationStmt;
 
+typedef enum AlterTypeCmdType
+{
+} AlterTypeCmdType;
+
+typedef struct AlterTypeCmd
+{
+	NodeTag				type;
+	AlterTypeCmdType	cmdtype;
+	Node			   *def;
+} AlterTypeCmd;
+
+typedef struct AlterTypeStmt
+{
+	NodeTag		type;
+	List	   *typeName;
+	List	   *cmds;
+} AlterTypeStmt;
+
 #endif   /* PARSENODES_H */
