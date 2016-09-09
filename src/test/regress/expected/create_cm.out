@@ -271,3 +271,36 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
 ---------+---------
 (0 rows)
 
+-- Test ALTER TYPE SET COMPRESSED
+ALTER TYPE json SET COMPRESSED jsonb;
+CREATE TABLE jstest (js json);
+SELECT attcompression FROM pg_attribute WHERE attrelid = 'jstest'::regclass AND attnum = 1;
+ attcompression 
+----------------
+           3368
+(1 row)
+
+INSERT INTO jstest VALUES ('[ 123,  "abc", { "k" : "v" }  ]');
+SELECT * FROM jstest;
+            js            
+--------------------------
+ [123, "abc", {"k": "v"}]
+(1 row)
+
+DROP TABLE jstest;
+ALTER TYPE json SET NOT COMPRESSED;
+CREATE TABLE jstest (js json);
+SELECT attcompression FROM pg_attribute WHERE attrelid = 'jstest'::regclass AND attnum = 1;
+ attcompression 
+----------------
+              0
+(1 row)
+
+INSERT INTO jstest VALUES ('[ 123,  "abc", { "k" : "v" }  ]');
+SELECT * FROM jstest;
+               js                
+---------------------------------
+ [ 123,  "abc", { "k" : "v" }  ]
+(1 row)
+
+DROP TABLE jstest;

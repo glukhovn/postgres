@@ -543,7 +543,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_existing_window_name
 %type <boolean> opt_if_not_exists
 
-%type <node>	columnCompression optColumnCompression
+%type <node>	columnCompression optColumnCompression compressedClause
 
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
@@ -2030,22 +2030,13 @@ alter_table_cmd:
 					n->def = (Node *) makeString($6);
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET COMPRESSED <cm> [WITH (<options>)] */
+			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET (NOT COMPRESSED | COMPRESSED <cm> [WITH (<options>)]) */
 			| ALTER opt_column ColId SET columnCompression
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
 					n->subtype = AT_AlterColumnCompression;
 					n->name = $3;
 					n->def = $5;
-					$$ = (Node *)n;
-				}
-			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET NOT COMPRESSED */
-			| ALTER opt_column ColId SET NOT COMPRESSED
-				{
-					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_AlterColumnCompression;
-					n->name = $3;
-					n->def = NULL;
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <name> DROP [COLUMN] IF EXISTS <colname> [RESTRICT|CASCADE] */
@@ -2509,8 +2500,16 @@ alterTypeCmds:
 		;
 
 alterTypeCmd:
-			EMPTY
+			/* ALTER TYPE <name> SET (NOT COMPRESSED | COMPRESSED <cm> [WITH (<options>)]) */
+			SET columnCompression
+				{
+					AlterTypeCmd *n = makeNode(AlterTypeCmd);
+					n->cmdtype = AT_AlterTypeCompression;
+					n->def = $2;
+					$$ = (Node *)n;
+				}
 		;
+
 AlterCompositeTypeStmt:
 			ALTER TYPE_P any_name alter_type_cmds
 				{
@@ -3014,18 +3013,31 @@ columnDef:	ColId Typename optColumnCompression create_generic_options ColQualLis
 				}
 		;
 
-columnCompression:
+compressedClause:
 			COMPRESSED name optCompressionParameters
 				{
 					ColumnCompression *n = makeNode(ColumnCompression);
 					n->methodName = $2;
+					n->methodOid = InvalidOid;
 					n->options = (List *) $3;
 					$$ = (Node *) n;
 				}
 		;
 
+columnCompression:
+			compressedClause |
+			NOT COMPRESSED
+				{
+					ColumnCompression *n = makeNode(ColumnCompression);
+					n->methodName = NULL;
+					n->methodOid = InvalidOid;
+					n->options = NIL;
+					$$ = (Node *) n;
+				}
+		;
+
 optColumnCompression:
-			columnCompression
+			compressedClause /* FIXME shift/reduce conflict on NOT COMPRESSED/NOT NULL */
 			| /*EMPTY*/	{ $$ = NULL; }
 		;
 

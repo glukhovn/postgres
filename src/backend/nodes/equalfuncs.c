@@ -2390,6 +2390,7 @@ static bool
 _equalColumnCompression(const ColumnCompression *a, const ColumnCompression *b)
 {
 	COMPARE_STRING_FIELD(methodName);
+	COMPARE_SCALAR_FIELD(methodOid);
 	COMPARE_NODE_FIELD(options);
 
 	return true;

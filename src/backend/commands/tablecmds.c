@@ -11314,9 +11314,12 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"", column)));
 
-	if (compression)
+	if (compression &&
+		(compression->methodName || OidIsValid(compression->methodOid)))
 	{
-		newCm = GetCompressionMethodOid(compression->methodName, false);
+		newCm = compression->methodName
+					? GetCompressionMethodOid(compression->methodName, false)
+					: compression->methodOid;
 		newCmr = GetCompressionMethodRoutineByCmId(newCm);
 		newOptions = compression->options;
 

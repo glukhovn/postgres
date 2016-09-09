@@ -656,6 +656,22 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 		cxt->alist = lappend(cxt->alist, stmt);
 	}
 
+	if (!column->compression && column->typeName)
+	{
+		Type			tup = typenameType(cxt->pstate, column->typeName, NULL);
+		Form_pg_type	type = (Form_pg_type) GETSTRUCT(tup);
+
+		if (OidIsValid(type->typdefaultcm))
+		{
+			column->compression = makeNode(ColumnCompression);
+			column->compression->methodName = NULL;
+			column->compression->methodOid = type->typdefaultcm;
+			column->compression->options = NIL;
+		}
+
+		ReleaseSysCache(tup);
+	}
+
 	if (column->compression != NULL)
 	{
 		AlterTableStmt *stmt;
