@@ -35,6 +35,7 @@ CATALOG(pg_compression,3367)
 {
 	NameData	cmname;			/* compression method name */
 	regproc		cmhandler;		/* handler function */
+	Oid			cmtargettype;	/* target type */
 	char		cmtype;			/* see CMTYPE_xxx constants below */
 } FormData_pg_compression;
 
@@ -49,20 +50,21 @@ typedef FormData_pg_compression *Form_pg_compression;
  *		compiler constants for pg_compression
  * ----------------
  */
-#define Natts_pg_compression			3
-#define Anum_pg_compression_cmname		1
-#define Anum_pg_compression_cmhandler	2
-#define Anum_pg_compression_cmtype		3
+#define Natts_pg_compression				4
+#define Anum_pg_compression_cmname			1
+#define Anum_pg_compression_cmhandler		2
+#define Anum_pg_compression_cmtargettype	3
+#define Anum_pg_compression_cmtype			4
 
 /* ----------------
  *		initial contents of pg_compression
  * ----------------
  */
 
-DATA(insert OID = 3368 (  jsonb		jsonb_handler	0 ));
+DATA(insert OID = 3368 (  jsonb			jsonb_handler			 114 0 ));
 DESCR("jsonb compression method");
 #define JSONB_CM_OID 3368
-DATA(insert OID = 3369 (  jsonbc	jsonbc_handler	0 ));
+DATA(insert OID = 3369 (  jsonbc		jsonbc_handler			 114 0 ));
 DESCR("jsonbc compression method");
 #define JSONBC_CM_OID 3369
 

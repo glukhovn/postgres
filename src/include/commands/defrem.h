@@ -146,7 +146,8 @@ extern char *get_am_name(Oid amOid);
 /* commands/compressioncmds.c */
 extern ObjectAddress DefineCompressionMethod(List *names, List *parameters);
 extern void RemoveCompressionMethodById(Oid amOid);
-extern Oid GetCompressionMethodOid(const char *cmname, bool missing_ok);
+extern Oid GetCompressionMethodOid(const char *cmname, Oid targetType,
+								   bool missing_ok);
 extern char *GetCompressionMethodName(Oid cmOid);
 
 /* support routines in commands/define.c */

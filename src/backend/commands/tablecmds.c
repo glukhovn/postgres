@@ -11318,7 +11318,8 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 		(compression->methodName || OidIsValid(compression->methodOid)))
 	{
 		newCm = compression->methodName
-					? GetCompressionMethodOid(compression->methodName, false)
+					? GetCompressionMethodOid(compression->methodName,
+											  atttableform->atttypid, false)
 					: compression->methodOid;
 		newCmr = GetCompressionMethodRoutineByCmId(newCm);
 		newOptions = compression->options;

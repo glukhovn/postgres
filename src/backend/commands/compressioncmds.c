@@ -23,7 +23,9 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "nodes/makefuncs.h"
 #include "parser/parse_func.h"
+#include "parser/parse_type.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -61,14 +63,15 @@ LookupCompressionHandlerFunc(List *handlerName)
 }
 
 static ObjectAddress
-CreateCompressionMethod(char *cmName, Oid cmNamespace, Oid collowner,
-						List *handlerName)
+CreateCompressionMethod(char *cmName, Oid cmNamespace, Oid collOwner,
+						List *handlerName, List *targetTypeName)
 {
 	Relation	rel;
 	ObjectAddress myself;
 	ObjectAddress referenced;
 	Oid			cmoid;
 	Oid			cmhandler;
+	Oid			cmtargettype;
 	bool		nulls[Natts_pg_compression];
 	Datum		values[Natts_pg_compression];
 	HeapTuple	tup;
@@ -89,6 +92,13 @@ CreateCompressionMethod(char *cmName, Oid cmNamespace, Oid collowner,
 	cmhandler = LookupCompressionHandlerFunc(handlerName);
 
 	/*
+	 * Get the target type oid.
+	 */
+	cmtargettype = LookupTypeNameOid(NULL,
+									 makeTypeNameFromNameList(targetTypeName),
+									 false);
+
+	/*
 	 * Insert tuple into pg_compression.
 	 */
 	memset(values, 0, sizeof(values));
@@ -97,6 +107,7 @@ CreateCompressionMethod(char *cmName, Oid cmNamespace, Oid collowner,
 	values[Anum_pg_compression_cmname - 1] =
 		DirectFunctionCall1(namein, CStringGetDatum(cmName));
 	values[Anum_pg_compression_cmhandler - 1] = ObjectIdGetDatum(cmhandler);
+	values[Anum_pg_compression_cmtargettype - 1] = ObjectIdGetDatum(cmtargettype);
 	values[Anum_pg_compression_cmtype - 1] = '\0';
 
 	tup = heap_form_tuple(RelationGetDescr(rel), values, nulls);
@@ -109,8 +120,11 @@ CreateCompressionMethod(char *cmName, Oid cmNamespace, Oid collowner,
 
 	/* Record dependency on handler function */
 	ObjectAddressSet(referenced, ProcedureRelationId, cmhandler);
-
 	recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+
+	/* Record dependency on target type */
+	ObjectAddressSet(referenced, TypeRelationId, cmtargettype);
+	recordDependencyOn(&myself, &referenced, DEPENDENCY_AUTO);
 
 	recordDependencyOnCurrentExtension(&myself, false);
 
@@ -126,6 +140,7 @@ DefineCompressionMethod(List *names, List *parameters)
 	Oid			cmNamespace;
 	ListCell   *pl;
 	DefElem    *handlerEl = NULL;
+	DefElem	   *targetTypeNameEl = NULL;
 
 	cmNamespace = QualifiedNameGetCreationNamespace(names, &cmName);
 
@@ -154,6 +169,8 @@ DefineCompressionMethod(List *names, List *parameters)
 
 		if (pg_strcasecmp(defel->defname, "handler") == 0)
 			defelp = &handlerEl;
+		else if (pg_strcasecmp(defel->defname, "type") == 0)
+			defelp = &targetTypeNameEl;
 		else
 		{
 			ereport(ERROR,
@@ -171,8 +188,14 @@ DefineCompressionMethod(List *names, List *parameters)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("compression method handler is not specified")));
 
+	if (!targetTypeNameEl)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("target type for compression method is not specified")));
+
 	return CreateCompressionMethod(cmName, cmNamespace, GetUserId(),
-								   (List *) handlerEl->arg);
+								   (List *) handlerEl->arg,
+								   (List *) targetTypeNameEl->arg);
 }
 
 void
@@ -208,7 +231,7 @@ RemoveCompressionMethodById(Oid cmOid)
  * If missing_ok is true, just return InvalidOid.
  */
 Oid
-GetCompressionMethodOid(const char *cmname, bool missing_ok)
+GetCompressionMethodOid(const char *cmname, Oid targetType, bool missing_ok)
 {
 	HeapTuple	tup;
 	Oid			oid = InvalidOid;
@@ -216,6 +239,16 @@ GetCompressionMethodOid(const char *cmname, bool missing_ok)
 	tup = SearchSysCache1(COMPRESSIONMETHODNAME, CStringGetDatum(cmname));
 	if (HeapTupleIsValid(tup))
 	{
+		Form_pg_compression cm = (Form_pg_compression) GETSTRUCT(tup);
+
+		if (OidIsValid(targetType) &&
+			cm->cmtargettype != ANYOID &&
+			cm->cmtargettype != getBaseType(targetType))
+			ereport(ERROR,
+					(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+					 errmsg("compression method \"%s\" is not applicable to type \"%s\"",
+							cmname, format_type_be(targetType))));
+
 		oid = HeapTupleGetOid(tup);
 		ReleaseSysCache(tup);
 	}

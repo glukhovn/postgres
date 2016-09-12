@@ -1,8 +1,16 @@
-CREATE COMPRESSION METHOD jsonb2 HANDLER no_such_handler;
+CREATE COMPRESSION METHOD jsonb2 FOR json HANDLER no_such_handler;
 
-CREATE COMPRESSION METHOD jsonb HANDLER jsonb_handler;
+CREATE COMPRESSION METHOD jsonb FOR json HANDLER jsonb_handler;
 
-CREATE COMPRESSION METHOD jsonb2 HANDLER jsonb_handler;
+CREATE COMPRESSION METHOD jsonb2 FOR json HANDLER jsonb_handler;
+
+CREATE TABLE jstest(
+	js text COMPRESSED jsonb
+);
+
+CREATE TABLE jstest(
+	js text COMPRESSED jsonb2
+);
 
 CREATE TABLE jstest(
 	js1 json,

@@ -3620,8 +3620,8 @@ AlterTypeDefaultCompression(Oid typeid, ColumnCompression *compression)
 	Form_pg_type	oldtype = (Form_pg_type) GETSTRUCT(oldtup);
 
 	cmoid = compression->methodName
-				? GetCompressionMethodOid(compression->methodName, false)
-				: InvalidOid;
+			? GetCompressionMethodOid(compression->methodName, typeid, false)
+			: InvalidOid;
 
 	if (oldtype->typdefaultcm != cmoid)
 	{

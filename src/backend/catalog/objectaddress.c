@@ -1179,7 +1179,8 @@ get_object_address_unqualified(ObjectType objtype,
 			break;
 		case OBJECT_COMPRESSION_METHOD:
 			address.classId = CompressionMethodRelationId;
-			address.objectId = GetCompressionMethodOid(name, missing_ok);
+			address.objectId = GetCompressionMethodOid(name, InvalidOid,
+													   missing_ok);
 			address.objectSubId = 0;
 			break;
 		default:

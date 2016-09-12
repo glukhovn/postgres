@@ -5263,13 +5263,14 @@ DefineStmt:
 					n->definition = list_make1(makeDefElem("from", (Node *) $5));
 					$$ = (Node *)n;
 				}
-			| CREATE COMPRESSION METHOD any_name HANDLER handler_name
+			| CREATE COMPRESSION METHOD any_name FOR any_name HANDLER handler_name
 				{
 					DefineStmt *n = makeNode(DefineStmt);
 					n->kind = OBJECT_COMPRESSION_METHOD;
 					n->args = NIL;
 					n->defnames = $4;
-					n->definition = list_make1(makeDefElem("handler", (Node *) $6));
+					n->definition = list_make2(makeDefElem("type", (Node *) $6),
+											   makeDefElem("handler", (Node *) $8));
 					$$ = (Node *) n;
 				}
 		;

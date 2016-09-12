@@ -1,8 +1,16 @@
-CREATE COMPRESSION METHOD jsonb2 HANDLER no_such_handler;
+CREATE COMPRESSION METHOD jsonb2 FOR json HANDLER no_such_handler;
 ERROR:  function no_such_handler(internal) does not exist
-CREATE COMPRESSION METHOD jsonb HANDLER jsonb_handler;
+CREATE COMPRESSION METHOD jsonb FOR json HANDLER jsonb_handler;
 ERROR:  compression method "jsonb" already exists
-CREATE COMPRESSION METHOD jsonb2 HANDLER jsonb_handler;
+CREATE COMPRESSION METHOD jsonb2 FOR json HANDLER jsonb_handler;
+CREATE TABLE jstest(
+	js text COMPRESSED jsonb
+);
+ERROR:  compression method "jsonb" is not applicable to type "text"
+CREATE TABLE jstest(
+	js text COMPRESSED jsonb2
+);
+ERROR:  compression method "jsonb2" is not applicable to type "text"
 CREATE TABLE jstest(
 	js1 json,
 	js2 json COMPRESSED jsonb2,
