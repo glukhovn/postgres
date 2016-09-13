@@ -28,6 +28,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
+#include "utils/lsyscache.h"
 #include "utils/resowner_private.h"
 #include "utils/syscache.h"
 
@@ -738,6 +739,16 @@ BuildDescForRelation(List *schema)
 		has_not_null |= entry->is_not_null;
 		desc->attrs[attnum - 1]->attislocal = entry->is_local;
 		desc->attrs[attnum - 1]->attinhcount = entry->inhcount;
+		desc->attrs[attnum - 1]->attcompression = get_base_typnullcm(atttypid);
+		if (OidIsValid(desc->attrs[attnum - 1]->attcompression))
+		{
+			if (!desc->tdcompression)
+				desc->tdcompression =
+						palloc0(sizeof(desc->tdcompression[0]) * natts);
+			desc->tdcompression[attnum - 1].routine =
+					GetCompressionMethodRoutineByCmId(
+							desc->attrs[attnum - 1]->attcompression);
+		}
 	}
 
 	if (has_not_null)

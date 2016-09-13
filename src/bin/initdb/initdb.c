@@ -61,6 +61,7 @@
 #endif
 
 #include "catalog/catalog.h"
+#include "catalog/pg_compression.h"
 #include "common/restricted_token.h"
 #include "common/username.h"
 #include "mb/pg_wchar.h"
@@ -1692,6 +1693,8 @@ setup_depend(FILE *cmdfd)
 		" FROM pg_collation;\n\n",
 		"INSERT INTO pg_shdepend SELECT 0,0,0,0, tableoid,oid, 'p' "
 		" FROM pg_authid;\n\n",
+		"INSERT INTO pg_depend SELECT "CppAsString2(CompressionMethodRelationId)",typnullcm,0, tableoid,oid,0, 'i' "
+		" FROM pg_type WHERE typnullcm <> 0;\n\n",
 		NULL
 	};
 

@@ -390,6 +390,7 @@ extern Datum jsonb_set(PG_FUNCTION_ARGS);
 /* insert after or before (for arrays) */
 extern Datum jsonb_insert(PG_FUNCTION_ARGS);
 
+extern Datum jsonb_null_cm_handler(PG_FUNCTION_ARGS);
 extern Datum jsonb_handler(PG_FUNCTION_ARGS);
 
 /* Support functions */

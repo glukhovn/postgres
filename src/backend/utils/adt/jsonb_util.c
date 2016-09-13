@@ -2101,8 +2101,8 @@ jsonbDecompress(Datum value, CompressionOptions options)
 #endif
 }
 
-CompressionMethodRoutine *
-JsonbGetCMR()
+Datum
+jsonb_null_cm_handler(PG_FUNCTION_ARGS)
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
@@ -2112,7 +2112,7 @@ JsonbGetCMR()
 	cmr->compress = jsonbCompressJsonb;
 	cmr->decompress = NULL;
 
-	return cmr;
+	return PointerGetDatum(cmr);
 }
 
 Datum

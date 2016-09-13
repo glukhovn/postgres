@@ -658,18 +658,18 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 
 	if (!column->compression && column->typeName)
 	{
-		Type			tup = typenameType(cxt->pstate, column->typeName, NULL);
-		Form_pg_type	type = (Form_pg_type) GETSTRUCT(tup);
+		Type	tup = typenameType(cxt->pstate, column->typeName, NULL);
+		Oid		cmoid = get_base_typdefaultcm(tup);
 
-		if (OidIsValid(type->typdefaultcm))
+		ReleaseSysCache(tup);
+
+		if (OidIsValid(cmoid))
 		{
 			column->compression = makeNode(ColumnCompression);
 			column->compression->methodName = NULL;
-			column->compression->methodOid = type->typdefaultcm;
+			column->compression->methodOid = cmoid;
 			column->compression->options = NIL;
 		}
-
-		ReleaseSysCache(tup);
 	}
 
 	if (column->compression != NULL)

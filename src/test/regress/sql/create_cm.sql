@@ -153,3 +153,56 @@ SELECT attcompression FROM pg_attribute WHERE attrelid = 'jstest'::regclass AND 
 INSERT INTO jstest VALUES ('[ 123,  "abc", { "k" : "v" }  ]');
 SELECT * FROM jstest;
 DROP TABLE jstest;
+
+-- Test compressable type creation
+CREATE TYPE json2;
+
+CREATE TEMP TABLE json2_procs AS
+SELECT * FROM pg_proc p WHERE proname IN ('json_in', 'json_out', 'json_null_cm_handler');
+
+UPDATE json2_procs
+SET proname = replace(proname, 'json_', 'json2_');
+
+UPDATE json2_procs
+SET prorettype = (SELECT oid FROM pg_type WHERE typname = 'json2')
+WHERE proname = 'json2_in';
+
+UPDATE json2_procs
+SET proargtypes = (SELECT oid::text::oidvector FROM pg_type WHERE typname = 'json2')
+WHERE proname = 'json2_out';
+
+INSERT INTO pg_proc
+SELECT * FROM json2_procs;
+
+CREATE COMPRESSION METHOD json2_null FOR json2 HANDLER json2_null_cm_handler;
+
+CREATE TYPE json2 (
+	INPUT  = json2_in,
+	OUTPUT = json2_out,
+	NULLCM = json2_null
+);
+
+CREATE TEMP TABLE tjson2(js json2);
+INSERT INTO tjson2 VALUES ('abc');
+INSERT INTO tjson2 VALUES ('["abc", {"key": 123}, null]');
+SELECT * FROM tjson2;
+
+DROP FUNCTION json2_null_cm_handler(internal);
+DROP FUNCTION json2_in(cstring);
+DROP FUNCTION json2_out(json2);
+DROP FUNCTION json2_out(json2) CASCADE;
+DROP FUNCTION json2_in(cstring);
+DROP FUNCTION json2_null_cm_handler(internal);
+
+DROP TABLE tjson2;
+
+-- Test compression methods on domains
+CREATE DOMAIN json_not_null AS json NOT NULL;
+
+CREATE TEMP TABLE json_domain_test1(js json_not_null);
+SELECT attcompression FROM pg_attribute WHERE attrelid = 'json_domain_test1'::regclass AND attnum = 1;
+DROP TABLE json_domain_test1;
+
+CREATE TEMP TABLE json_domain_test2(js json_not_null compressed jsonb);
+SELECT attcompression FROM pg_attribute WHERE attrelid = 'json_domain_test2'::regclass AND attnum = 1;
+DROP TABLE json_domain_test2;

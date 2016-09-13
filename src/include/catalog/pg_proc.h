@@ -4481,10 +4481,14 @@ DATA(insert OID = 3252 (  pg_lsn_hash	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0
 DESCR("hash");
 
 /* Compression method handlers */
-DATA(insert OID = 3375 (  jsonb_handler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonb_handler _null_ _null_ _null_ ));
+DATA(insert OID = 3343 (  json_null_cm_handler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	json_null_cm_handler _null_ _null_ _null_ ));
+DESCR("json compression method handler");
+DATA(insert OID = 3344 (  jsonb_null_cm_handler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonb_null_cm_handler _null_ _null_ _null_ ));
 DESCR("jsonb compression method handler");
+DATA(insert OID = 3375 (  jsonb_handler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonb_handler _null_ _null_ _null_ ));
+DESCR("json to jsonb compression method handler");
 DATA(insert OID = 3376 (  jsonbc_handler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonbc_handler _null_ _null_ _null_ ));
-DESCR("jsonbc compression method handler");
+DESCR("json to jsonbc compression method handler");
 
 
 /* enum related procs */

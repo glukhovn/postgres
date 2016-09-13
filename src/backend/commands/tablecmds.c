@@ -4894,7 +4894,7 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	attribute.attislocal = colDef->is_local;
 	attribute.attinhcount = colDef->inhcount;
 	attribute.attcollation = collOid;
-	attribute.attcompression = InvalidOid;
+	attribute.attcompression = get_base_typnullcm(typeOid);
 	/* attribute.attacl is handled by InsertPgAttributeTuple */
 
 	ReleaseSysCache(typeTuple);
@@ -8437,7 +8437,7 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 	attTup->attbyval = tform->typbyval;
 	attTup->attalign = tform->typalign;
 	attTup->attstorage = tform->typstorage;
-	attTup->attcompression = InvalidOid;
+	attTup->attcompression = get_base_typnullcm(targettype);
 
 	ReleaseSysCache(typeTuple);
 
@@ -11296,6 +11296,7 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 	bool				newOptionsIsNull;
 	Oid					newCm;
 	Oid					oldCm;
+	Oid					nullCm;
 	CompressionMethodRoutine *newCmr;
 
 	attrel = heap_open(AttributeRelationId, RowExclusiveLock);
@@ -11313,6 +11314,8 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"", column)));
+
+	nullCm = get_base_typnullcm(atttableform->atttypid);
 
 	if (compression &&
 		(compression->methodName || OidIsValid(compression->methodOid)))
@@ -11335,8 +11338,9 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 	}
 	else
 	{
-		newCmr = NULL;
-		newCm = InvalidOid;
+		newCm = nullCm;
+		newCmr = OidIsValid(newCm) ? GetCompressionMethodRoutineByCmId(newCm)
+								   : NULL;
 		newOptions = NULL;
 		newOptionsIsNull = true;
 		newOptionsDatum = PointerGetDatum(NULL);
@@ -11386,14 +11390,14 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 			values[Anum_pg_attribute_attcompression - 1] = ObjectIdGetDatum(newCm);
 			replace[Anum_pg_attribute_attcompression - 1] = true;
 
-			if (OidIsValid(oldCm))
+			if (OidIsValid(oldCm) && oldCm != nullCm)
 				deleteDependencyRecordsForClass(RelationRelationId,
 												RelationGetRelid(rel),
 												attnum,
 												CompressionMethodRelationId,
 												DEPENDENCY_NORMAL);
 
-			if (OidIsValid(newCm))
+			if (OidIsValid(newCm) && newCm != nullCm)
 			{
 				ObjectAddress	myself,
 								referenced;

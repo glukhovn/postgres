@@ -585,14 +585,7 @@ RelationBuildTupleDesc(Relation relation)
 			ndef++;
 		}
 
-#define TypeIsCompressable(type) ((type) == JSONOID || (type) == JSONBOID)
-
-#define GetCompressionMethodRoutineForType(type) \
-	((type) == JSONOID ? JsonGetCMR() : JsonbGetCMR())
-
-		if (!attp->attisdropped &&
-			(OidIsValid(attp->attcompression) ||
-			 TypeIsCompressable(attp->atttypid)))
+		if (!attp->attisdropped && OidIsValid(attp->attcompression))
 		{
 			MemoryContext	oldctx = MemoryContextSwitchTo(CacheMemoryContext);
 			Datum			optionsDatum;
@@ -604,19 +597,10 @@ RelationBuildTupleDesc(Relation relation)
 									palloc0(relation->rd_rel->relnatts *
 											sizeof(AttributeCompression));
 
-			if (OidIsValid(attp->attcompression))
-			{
-				cmr = GetCompressionMethodRoutineByCmId(attp->attcompression);
-				optionsDatum = GetAttributeCompressionOptions(
+			cmr = GetCompressionMethodRoutineByCmId(attp->attcompression);
+			optionsDatum = GetAttributeCompressionOptions(
 								RelationGetRelid(relation), attp->attnum);
-				optionsList = untransformRelOptions(optionsDatum);
-			}
-			else
-			{
-				cmr = GetCompressionMethodRoutineForType(attp->atttypid);
-				optionsDatum = PointerGetDatum(NULL);
-				optionsList = NIL;
-			}
+			optionsList = untransformRelOptions(optionsDatum);
 
 			compression[attp->attnum - 1].routine = cmr;
 			compression[attp->attnum - 1].optionsDatum = optionsDatum;

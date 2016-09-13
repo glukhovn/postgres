@@ -3025,8 +3025,8 @@ jsontCompress(Datum value, CompressionOptions options)
 	return PointerGetDatum(text);
 }
 
-CompressionMethodRoutine *
-JsonGetCMR()
+Datum
+json_null_cm_handler(PG_FUNCTION_ARGS)
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
@@ -3036,5 +3036,5 @@ JsonGetCMR()
 	cmr->compress = jsontCompress;
 	cmr->decompress = NULL;
 
-	return cmr;
+	return PointerGetDatum(cmr);
 }

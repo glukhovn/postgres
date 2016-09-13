@@ -706,7 +706,8 @@ tuple_decompress_attr(TupleDesc tupdesc, int attnum, Datum value)
 {
 	AttributeCompression *compression =
 			TupleDescGetAttributeCompression(tupdesc, attnum);
-	return compression->routine->decompress(value, compression->options);
+	return compression->routine->decompress ?
+		compression->routine->decompress(value, compression->options) : value;
 }
 
 /*
@@ -751,12 +752,7 @@ heap_form_tuple_compress(TupleDesc tupleDescriptor,
 				break;
 		}
 		else if (compress ? compress[i] :
-				 (OidIsValid(tupleDescriptor->attrs[i]->attcompression) ||
-				  (tupleDescriptor->attrs[i]->attlen == -1 &&
-				   OidIsValid(tupleDescriptor->attrs[i]->attrelid) &&
-				   tupleDescriptor->tdcompression &&
-				   tupleDescriptor->tdcompression[i].routine &&
-				   VARATT_IS_EXTERNAL(DatumGetPointer(values[i])))))
+				 tuple_attr_needs_compression(tupleDescriptor, i, values[i]))
 		{
 			if (!oldValues)
 			{

@@ -133,6 +133,7 @@ DefineType(List *names, List *parameters)
 	char		alignment = 'i';	/* default alignment */
 	char		storage = 'p';	/* default TOAST storage method */
 	Oid			collation = InvalidOid;
+	char	   *nullcmName = NULL;
 	DefElem    *likeTypeEl = NULL;
 	DefElem    *internalLengthEl = NULL;
 	DefElem    *inputNameEl = NULL;
@@ -151,6 +152,7 @@ DefineType(List *names, List *parameters)
 	DefElem    *alignmentEl = NULL;
 	DefElem    *storageEl = NULL;
 	DefElem    *collatableEl = NULL;
+	DefElem    *nullcmNameEl = NULL;
 	Oid			inputOid;
 	Oid			outputOid;
 	Oid			receiveOid = InvalidOid;
@@ -162,6 +164,7 @@ DefineType(List *names, List *parameters)
 	Oid			array_oid;
 	Oid			typoid;
 	Oid			resulttype;
+	Oid			nullcmOid = InvalidOid;
 	ListCell   *pl;
 	ObjectAddress address;
 
@@ -281,6 +284,8 @@ DefineType(List *names, List *parameters)
 			defelp = &storageEl;
 		else if (pg_strcasecmp(defel->defname, "collatable") == 0)
 			defelp = &collatableEl;
+		else if (pg_strcasecmp(defel->defname, "nullcm") == 0)
+			defelp = &nullcmNameEl;
 		else
 		{
 			/* WARNING, not ERROR, for historical backwards-compatibility */
@@ -412,6 +417,8 @@ DefineType(List *names, List *parameters)
 	}
 	if (collatableEl)
 		collation = defGetBoolean(collatableEl) ? DEFAULT_COLLATION_OID : InvalidOid;
+	if (nullcmNameEl)
+		nullcmName = defGetString(nullcmNameEl);
 
 	/*
 	 * make sure we have our required definitions
@@ -512,6 +519,8 @@ DefineType(List *names, List *parameters)
 	if (analyzeName)
 		analyzeOid = findTypeAnalyzeFunction(analyzeName, typoid);
 
+	if (nullcmName)
+		nullcmOid = GetCompressionMethodOid(nullcmName, typoid, false);
 	/*
 	 * Check permissions on functions.  We choose to require the creator/owner
 	 * of a type to also own the underlying functions.  Since creating a type
@@ -631,7 +640,8 @@ DefineType(List *names, List *parameters)
 				   -1,			/* typMod (Domains only) */
 				   0,			/* Array Dimensions of typbasetype */
 				   false,		/* Type NOT NULL */
-				   collation);	/* type's collation */
+				   collation,	/* type's collation */
+				   nullcmOid);	/* compression method */
 	Assert(typoid == address.objectId);
 
 	/*
@@ -672,7 +682,8 @@ DefineType(List *names, List *parameters)
 			   -1,				/* typMod (Domains only) */
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
-			   collation);		/* type's collation */
+			   collation,		/* type's collation */
+			   InvalidOid);		/* compression method - none */
 
 	pfree(array_type);
 
@@ -1058,7 +1069,8 @@ DefineDomain(CreateDomainStmt *stmt)
 				   basetypeMod, /* typeMod value */
 				   typNDims,	/* Array dimensions for base type */
 				   typNotNull,	/* Type NOT NULL */
-				   domaincoll); /* type's collation */
+				   domaincoll,	/* type's collation */
+				   InvalidOid);	/* compression method - none */
 
 	/*
 	 * Process constraints which refer to the domain ID returned by TypeCreate
@@ -1170,7 +1182,8 @@ DefineEnum(CreateEnumStmt *stmt)
 				   -1,			/* typMod (Domains only) */
 				   0,			/* Array dimensions of typbasetype */
 				   false,		/* Type NOT NULL */
-				   InvalidOid); /* type's collation */
+				   InvalidOid,	/* type's collation */
+				   InvalidOid);	/* compression method - none */
 
 	/* Enter the enum's values into pg_enum */
 	EnumValuesCreate(enumTypeAddr.objectId, stmt->vals);
@@ -1210,7 +1223,8 @@ DefineEnum(CreateEnumStmt *stmt)
 			   -1,				/* typMod (Domains only) */
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
-			   InvalidOid);		/* type's collation */
+			   InvalidOid,		/* type's collation */
+			   InvalidOid);		/* compression method - none */
 
 	pfree(enumArrayName);
 
@@ -1509,7 +1523,8 @@ DefineRange(CreateRangeStmt *stmt)
 				   -1,			/* typMod (Domains only) */
 				   0,			/* Array dimensions of typbasetype */
 				   false,		/* Type NOT NULL */
-				   InvalidOid); /* type's collation (ranges never have one) */
+				   InvalidOid,	/* type's collation (ranges never have one) */
+				   InvalidOid);	/* compression method - none */
 	Assert(typoid == address.objectId);
 
 	/* Create the entry in pg_range */
@@ -1551,7 +1566,8 @@ DefineRange(CreateRangeStmt *stmt)
 			   -1,				/* typMod (Domains only) */
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
-			   InvalidOid);		/* typcollation */
+			   InvalidOid,		/* typcollation */
+			   InvalidOid);		/* compression method - none */
 
 	pfree(rangeArrayName);
 
@@ -2250,6 +2266,7 @@ AlterDomainDefault(List *names, Node *defaultRaw)
 							 typTup->typbasetype,
 							 typTup->typcollation,
 							 defaultExpr,
+							 InvalidOid,
 							 true);		/* Rebuild is true */
 
 	InvokeObjectPostAlterHook(TypeRelationId, domainoid, 0);
