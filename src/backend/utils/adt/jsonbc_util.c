@@ -1322,7 +1322,7 @@ static Datum
 jsonbcDecompress(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
-	Json *json = DatumGetJson(value, &jsonbcContainerOps, options);
+	Json *json = DatumGetJson(value, &jsonbcContainerOps, options, NULL);
 	return JsonGetDatum(json);
 #else
 	JsonContainerData	jc;

@@ -12,7 +12,7 @@
 #include "utils/memutils.h"
 
 static Json *JsonExpand(Datum value, JsonContainerOps *ops,
-						CompressionOptions opts);
+						CompressionOptions opts, Json *tmp);
 
 static JsonContainerOps jsonvContainerOps;
 
@@ -590,11 +590,12 @@ jsonWriteExtended(JsonContainer *jc, void *ptr, Size allocated_size)
 }
 
 static void
-JsonInitExtended(Json *json, const void *ptr)
+JsonInitExtended(Json *json)
 {
 	JsonContainerData	   *jc = JsonRoot(json);
 	varatt_extended_json   *pextjs,
 							extjs;
+	void				   *ptr = DatumGetPointer(json->obj.value);
 	int						len;
 
 	Assert(VARATT_IS_EXTERNAL_EXTENDED(ptr));
@@ -618,7 +619,10 @@ JsonInitExtended(Json *json, const void *ptr)
 
 		SET_VARSIZE(p, VARHDRSZ + len);
 		memcpy(VARDATA(p), &pextjs->data[optionsSize], len);
-		json->obj.compressed = PointerGetDatum(p);
+		if (json->obj.freeValue)
+			pfree(DatumGetPointer(json->obj.value));
+		json->obj.value = PointerGetDatum(p);
+		json->obj.freeValue = true;
 	}
 #else
 	jc->len = len;
@@ -634,21 +638,22 @@ JsonInitExtended(Json *json, const void *ptr)
 static void
 JsonInit(Json *json)
 {
-	const void *data = DatumGetPointer(json->obj.compressed);
+	const void *data = DatumGetPointer(json->obj.value);
+	const void *detoasted_data;
 
 	Assert(json->root.data || data);
 
 	if (json->root.data || !data)
 		return;
 
-	data = PG_DETOAST_DATUM(json->obj.compressed);
+	detoasted_data = PG_DETOAST_DATUM(json->obj.value);
+	json->obj.value = PointerGetDatum(detoasted_data);
+	json->obj.freeValue = data != detoasted_data;
 
-	if (VARATT_IS_EXTERNAL_EXTENDED(data))
-		JsonInitExtended(json, data);
-	else
-		json->obj.compressed = PointerGetDatum(data);
+	if (VARATT_IS_EXTERNAL_EXTENDED(detoasted_data))
+		JsonInitExtended(json);
 
-	json->root.ops->init(&json->root, json->obj.compressed, json->obj.options);
+	json->root.ops->init(&json->root, json->obj.value, json->obj.options);
 }
 
 
@@ -770,27 +775,41 @@ jsonExpandedObjectMethods =
 };
 
 static Json *
-JsonExpand(Datum value, JsonContainerOps *ops, CompressionOptions options)
+JsonExpand(Datum value, JsonContainerOps *ops, CompressionOptions options,
+		   Json *tmp)
 {
 	MemoryContext	objcxt;
 	Json		   *json;
 
-	/*
-	 * Allocate private context for expanded object.  We start by assuming
-	 * that the json won't be very large; but if it does grow a lot, don't
-	 * constrain aset.c's large-context behavior.
-	 */
-	objcxt = AllocSetContextCreate(CurrentMemoryContext,
-								   "expanded json",
-								   ALLOCSET_SMALL_MINSIZE,
-								   ALLOCSET_SMALL_INITSIZE,
-								   ALLOCSET_DEFAULT_MAXSIZE);
+	if (tmp)
+	{
+		json = tmp;
+		json->obj.eoh.vl_len_ = 0;
+	}
+	else
+	{
+#ifndef JSON_EXPANDED_OBJECT_MCXT
+		json = (Json *) palloc(sizeof(Json));
+		objcxt = NULL;
+#else
+		/*
+		 * Allocate private context for expanded object.  We start by assuming
+		 * that the json won't be very large; but if it does grow a lot, don't
+		 * constrain aset.c's large-context behavior.
+		 */
+		objcxt = AllocSetContextCreate(CurrentMemoryContext,
+									   "expanded json",
+									   ALLOCSET_SMALL_MINSIZE,
+									   ALLOCSET_SMALL_INITSIZE,
+									   ALLOCSET_DEFAULT_MAXSIZE);
 
-	json = (Json *) MemoryContextAlloc(objcxt, sizeof(Json));
+		json = (Json *) MemoryContextAlloc(objcxt, sizeof(Json));
+#endif
 
-	EOH_init_header(&json->obj.eoh, &jsonExpandedObjectMethods, objcxt);
+		EOH_init_header(&json->obj.eoh, &jsonExpandedObjectMethods, objcxt);
+	}
 
-	json->obj.compressed = value;
+	json->obj.value = value;
 	json->obj.options = options;
 	json->root.data = NULL;
 	json->root.len = 0;
@@ -802,18 +821,43 @@ JsonExpand(Datum value, JsonContainerOps *ops, CompressionOptions options)
 }
 
 static Json *
-JsonExpandDatum(Datum value, JsonContainerOps *ops, CompressionOptions options)
+JsonExpandDatum(Datum value, JsonContainerOps *ops, CompressionOptions options,
+				Json *tmp)
 {
 	return VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(value))
 					? (Json *) DatumGetEOHP(value)
-					: JsonExpand(value, ops, options);
+					: JsonExpand(value, ops, options, tmp);
 }
 
 Json *
-DatumGetJson(Datum value, JsonContainerOps *ops, CompressionOptions options)
+DatumGetJson(Datum value, JsonContainerOps *ops, CompressionOptions options,
+			 Json *tmp)
 {
-	Json *json = JsonExpandDatum(value, ops, options);
+	Json *json = JsonExpandDatum(value, ops, options, tmp);
 	JsonInit(json);
+	return json;
+}
+
+void
+JsonFree(Json *json)
+{
+	if (json->obj.freeValue)
+		pfree(DatumGetPointer(json->obj.value));
+
+	if (!JsonIsTemporary(json))
+		pfree(json);
+}
+
+Json *
+JsonCopyTemporary(Json *tmp)
+{
+	Json *json = (Json *) palloc(sizeof(Json));
+
+	memcpy(json, tmp, sizeof(Json));
+	tmp->obj.freeValue = false;
+
+	EOH_init_header(&json->obj.eoh, &jsonExpandedObjectMethods, NULL);
+
 	return json;
 }
 
@@ -823,13 +867,15 @@ JsonValueToJson(JsonValue *val)
 	if (val->type == jbvBinary)
 	{
 		JsonContainer  *jc = val->val.binary.data;
-		Json		   *json = JsonExpand(PointerGetDatum(NULL), jc->ops, NULL);
+		Json		   *json = JsonExpand(PointerGetDatum(NULL), jc->ops, NULL,
+										  NULL);
 		json->root = *jc;
 		return json;
 	}
 	else
 	{
-		Json *json = JsonExpand(PointerGetDatum(NULL), &jsonvContainerOps, NULL);
+		Json *json = JsonExpand(PointerGetDatum(NULL), &jsonvContainerOps, NULL,
+								NULL);
 		jsonvInitContainer(&json->root, val);
 		return json;
 	}

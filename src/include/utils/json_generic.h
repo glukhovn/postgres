@@ -80,8 +80,9 @@ struct JsonContainerOps
 typedef struct CompressedObject
 {
 	ExpandedObjectHeader	eoh;
-	Datum					compressed;
+	Datum					value;
 	CompressionOptions	   	options;
+	bool					freeValue;
 } CompressedObject;
 
 typedef struct Json
@@ -90,13 +91,41 @@ typedef struct Json
 	JsonContainerData	root;
 } Json;
 
-#undef DatumGetJsonb
-#undef JsonbGetDatum
+#define JsonIsTemporary(json) \
+		((json)->obj.eoh.vl_len_ != EOH_HEADER_MAGIC)
 
-#define JsonGetDatum(json)			EOHPGetRODatum(&(json)->obj.eoh)
-#define DatumGetJsont(datum)		DatumGetJson(datum, &jsontContainerOps, NULL)
-#define DatumGetJsonb(datum)		DatumGetJson(datum, &jsonbContainerOps, NULL)
+#define JsonGetNonTemporary(json) \
+		(JsonIsTemporary(json) ? JsonCopyTemporary(json) : (json))
+
+#define JsonGetDatum(json) \
+		EOHPGetRODatum(&JsonGetNonTemporary(json)->obj.eoh)
+
+#define DatumGetJsont(datum) \
+		DatumGetJson(datum, &jsontContainerOps, NULL, NULL)
+
+#undef DatumGetJsonb
+#define DatumGetJsonb(datum) \
+		DatumGetJson(datum, &jsonbContainerOps, NULL, NULL)
+
+#define DatumGetJsonbTmp(datum,tmp)	\
+		DatumGetJson(datum, &jsonbContainerOps, NULL, tmp)
+
+#undef JsonbGetDatum
 #define JsonbGetDatum(json)			JsonGetDatum(json)
+
+#define PG_GETARG_JSONB_TMP(n, tmp)	DatumGetJsonbTmp(PG_GETARG_DATUM(n), tmp)
+
+#undef	PG_GETARG_JSONB
+#define PG_GETARG_JSONB(n)			PG_GETARG_JSONB_TMP(n, alloca(sizeof(Json)))
+
+#define PG_FREE_IF_COPY_JSONB(json, n) \
+	do { \
+		if (!VARATT_IS_EXTERNAL_EXPANDED(PG_GETARG_POINTER(n))) \
+			JsonFree(json); \
+		else \
+			Assert(DatumGetEOHP(PG_GETARG_DATUM(n)) == &(json)->obj.eoh); \
+	} while (0)
+
 
 #define JsonRoot(json)				(&(json)->root)
 #define JsonGetSize(json)			(JsonRoot(json)->len)
@@ -168,7 +197,10 @@ typedef struct Json
 #define equalsJsonbScalarValue			JsonValueScalarEquals
 
 extern Json *DatumGetJson(Datum val, JsonContainerOps *ops,
-						  CompressionOptions options);
+						  CompressionOptions options, Json *tmp);
+
+extern void JsonFree(Json *json);
+extern Json *JsonCopyTemporary(Json *tmp);
 
 #define JsonContainerAlloc() \
 	((JsonContainerData *) palloc(sizeof(JsonContainerData)))
