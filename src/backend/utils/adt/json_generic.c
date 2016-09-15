@@ -662,13 +662,16 @@ JsonInit(Json *json)
 #define flatContainerOps &jsonbContainerOps
 
 static Size
-jsonGetFlatSize2(Json *json)
+jsonGetFlatSize2(Json *json, void **context)
 {
 	Size		size;
 #ifdef JSON_FLATTEN_INTO_JSON
 	char	   *str = JsonToCString(JsonRoot(json));
 	size = VARHDRSZ + strlen(str);
-	pfree(str);
+	if (context)
+		*context = str;
+	else
+		pfree(str);
 #else
 	JsonValue	val;
 # ifdef JSON_FLATTEN_INTO_JSONBC
@@ -677,33 +680,41 @@ jsonGetFlatSize2(Json *json)
 	void	   *js = JsonValueToJsonb(JsonToJsonValue(json, &val));
 # endif
 	size = VARSIZE(js);
-	pfree(js);
+	if (context)
+		*context = js;
+	else
+		pfree(js);
 #endif
 
 	return size;
 }
 
 static void *
-jsonFlatten(Json *json)
+jsonFlatten(Json *json, void **context)
 {
 #ifdef JSON_FLATTEN_INTO_JSON
-	char   *str = JsonToCString(JsonRoot(json));
+	char   *str = context ? (char *) *context : JsonToCString(JsonRoot(json));
 	text   *text = cstring_to_text(str);
 	pfree(str);
 	return text;
 #else
-	JsonValue	valbuf;
-	JsonValue  *val = JsonToJsonValue(json, &valbuf);
+	if (context)
+		return *context;
+	else
+	{
+		JsonValue	valbuf;
+		JsonValue  *val = JsonToJsonValue(json, &valbuf);
 # ifdef JSON_FLATTEN_INTO_JSONBC
-	return JsonValueToJsonbc(val);
+		return JsonValueToJsonbc(val);
 # else
-	return JsonValueToJsonb(val);
+		return JsonValueToJsonb(val);
 # endif
+	}
 #endif
 }
 
 static Size
-jsonGetFlatSize(ExpandedObjectHeader *eoh)
+jsonGetFlatSize(ExpandedObjectHeader *eoh, void **context)
 {
 	Json   *json = (Json *) eoh;
 
@@ -718,19 +729,20 @@ jsonGetFlatSize(ExpandedObjectHeader *eoh)
 		{
 			tmp.data = NULL;
 			tmp.ops = flatContainerOps;
-			tmp.len = jsonGetFlatSize2(json) - VARHDRSZ;
+			tmp.len = jsonGetFlatSize2(json, context) - VARHDRSZ;
 			flat = &tmp;
 		}
 
 		return jsonGetExtendedSize(flat);
 	}
 #else
-	return jsonGetFlatSize2(json);
+	return jsonGetFlatSize2(json, context);
 #endif
 }
 
 static void
-jsonFlattenInto(ExpandedObjectHeader *eoh, void *result, Size allocated_size)
+jsonFlattenInto(ExpandedObjectHeader *eoh, void *result, Size allocated_size,
+				void **context)
 {
 	Json   *json = (Json *) eoh;
 
@@ -744,7 +756,7 @@ jsonFlattenInto(ExpandedObjectHeader *eoh, void *result, Size allocated_size)
 
 		if (flat->ops == &jsonvContainerOps)
 		{
-			tmpData = jsonFlatten(json);
+			tmpData = jsonFlatten(json, context);
 
 			tmp.ops = flatContainerOps;
 			tmp.data = VARDATA(tmpData);
@@ -760,7 +772,7 @@ jsonFlattenInto(ExpandedObjectHeader *eoh, void *result, Size allocated_size)
 	}
 #else
 	{
-		void *data = jsonFlatten(json);
+		void *data = jsonFlatten(json, context);
 		memcpy(result, data, allocated_size);
 		pfree(data);
 	}
