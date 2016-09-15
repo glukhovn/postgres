@@ -36,6 +36,9 @@
 
 #ifdef JSONBC_DICT_SYSCACHE
 
+static JsonbcKeyId
+jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name);
+
 JsonbcKeyId
 jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
 {
@@ -52,6 +55,7 @@ jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
 	}
 	else
 	{
+#ifndef JSONBC_DICT_UPSERT
 		Datum		values[Natts_pg_jsonbc_dict];
 		bool		nulls[Natts_pg_jsonbc_dict];
 		Relation	rel;
@@ -74,6 +78,9 @@ jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
 		relation_close(rel, RowExclusiveLock);
 
 		heap_freetuple(tuple);
+#else
+		id = jsonbcDictGetIdByNameSlow(dict, name);
+#endif
 	}
 
 	pfree(txt);
@@ -109,7 +116,6 @@ jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
 #else
 static bool initialized = false;
 static HTAB *idToNameHash, *nameToIdHash;
-static SPIPlanPtr savedPlanInsert = NULL;
 static SPIPlanPtr savedPlanSelect = NULL;
 #ifndef JSONBC_DICT_SEQUENCES
 static SPIPlanPtr savedPlanNewDict = NULL;
@@ -220,6 +226,10 @@ jsonbcDictAddEntry(JsonbcDictId dict, JsonbcKeyId id, JsonbcKeyName name)
 
 	return idToName;
 }
+#endif
+
+#if !defined(JSONBC_DICT_SYSCACHE) || defined(JSONBC_DICT_UPSERT)
+static SPIPlanPtr savedPlanInsert = NULL;
 
 static JsonbcKeyId
 jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
@@ -239,6 +249,15 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 	if (!savedPlanInsert)
 	{
 		savedPlanInsert = SPI_prepare(
+#ifdef JSONBC_DICT_UPSERT
+# ifdef JSONBC_DICT_SEQUENCES
+			"INSERT INTO "JSONBC_DICT_TAB" (dict, name, id) VALUES ($1, $2, $3)"
+# else
+			"INSERT INTO "JSONBC_DICT_TAB" (dict, name) VALUES ($1, $2)"
+# endif
+			" ON CONFLICT (dict, name) DO UPDATE SET id = "JSONBC_DICT_TAB".id"
+			" RETURNING id;",
+#else
 			"WITH select_data AS ( "
 			"	SELECT id FROM "JSONBC_DICT_TAB" WHERE dict = $1 AND name = $2"
 			"), "
@@ -256,6 +275,7 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 			"SELECT id FROM select_data "
 			"	UNION ALL "
 			"SELECT id FROM insert_data;",
+#endif
 			lengthof(argTypes), argTypes);
 		if (!savedPlanInsert)
 			elog(ERROR, "Error preparing query");
@@ -275,12 +295,16 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 
 	id = DatumGetJsonbcKeyId(SPI_getbinval(SPI_tuptable->vals[0],
 										   SPI_tuptable->tupdesc, 1, &null));
+#ifndef JSONBC_DICT_SYSCACHE
 	jsonbcDictAddEntry(dict, id, name);
+#endif
 
 	SPI_finish();
 	return id;
 }
+#endif
 
+#ifndef JSONBC_DICT_SYSCACHE
 JsonbcKeyId
 jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
 {

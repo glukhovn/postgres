@@ -6,6 +6,7 @@
 
 #define JSONBC_DICT_SEQUENCES
 #define JSONBC_DICT_SYSCACHE
+#define JSONBC_DICT_UPSERT
 
 typedef int32 JsonbcKeyId;
 #define JsonbcKeyIdTypeOid	INT4OID
@@ -22,6 +23,8 @@ typedef int32 JsonbcDictId;
 #define JsonbcDictIdGetDatum(datum)	Int32GetDatum(datum)
 #define DatumGetJsonbcDictId(datum)	DatumGetInt32(datum)
 #endif
+
+#define DatumGetJsonbcKeyId(datum)	DatumGetInt32(datum)
 
 typedef struct
 {

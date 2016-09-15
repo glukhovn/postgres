@@ -328,7 +328,7 @@ DECLARE_UNIQUE_INDEX(pg_replication_origin_roname_index, 6002, on pg_replication
 DECLARE_UNIQUE_INDEX(pg_jsonbc_dict_id_index, 3379, on pg_jsonbc_dict using btree(dict oid_ops, id int4_ops));
 #define JsonbcDictionaryIdIndexId 3379
 
-DECLARE_INDEX(pg_jsonbc_dict_name_index, 3380, on pg_jsonbc_dict using btree(dict oid_ops, name text_ops));
+DECLARE_UNIQUE_INDEX(pg_jsonbc_dict_name_index, 3380, on pg_jsonbc_dict using btree(dict oid_ops, name text_ops));
 #define JsonbcDictionaryNameIndexId 3380
 
 /* last step of initialization script: build the indexes declared above */
