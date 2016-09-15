@@ -1521,7 +1521,7 @@ jsonb_agg_transfn(PG_FUNCTION_ARGS)
 	if (!AggCheckCallContext(fcinfo, &aggcontext))
 	{
 		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "jsonb_agg_transfn called in non-aggregate context");
+		elog(ERROR, JSONB"_agg_transfn called in non-aggregate context");
 	}
 
 	/* set up the accumulator on the first go round */
@@ -1675,7 +1675,7 @@ jsonb_object_agg_transfn(PG_FUNCTION_ARGS)
 	if (!AggCheckCallContext(fcinfo, &aggcontext))
 	{
 		/* cannot be called directly because of internal-type argument */
-		elog(ERROR, "jsonb_object_agg_transfn called in non-aggregate context");
+		elog(ERROR, JSONB"_object_agg_transfn called in non-aggregate context");
 	}
 
 	/* set up the accumulator on the first go round */
