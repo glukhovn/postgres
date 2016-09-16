@@ -674,6 +674,9 @@ pushJsonbValueExt(JsonbParseState **pstate, JsonbIteratorToken seq,
 		jbval->type != jbvBinary || !unpackBinary)
 	{
 		/* drop through */
+		if (jbval && (seq == WJB_ELEM || seq == WJB_VALUE))
+			jbval = JsonValueUnwrap(jbval, &v);
+
 		return pushJsonbValueScalar(pstate, seq, jbval);
 	}
 
