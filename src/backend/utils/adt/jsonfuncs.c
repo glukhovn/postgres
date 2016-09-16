@@ -554,6 +554,7 @@ jsonb_object_field_text(PG_FUNCTION_ARGS)
 	Jsonb	   *jb = PG_GETARG_JSONB(0);
 	text	   *key = PG_GETARG_TEXT_PP(1);
 	JsonbValue *v;
+	JsonbValue	vbuf;
 
 	if (!JB_ROOT_IS_OBJECT(jb))
 		PG_RETURN_NULL();
@@ -580,6 +581,10 @@ jsonb_object_field_text(PG_FUNCTION_ARGS)
 				result = cstring_to_text(DatumGetCString(DirectFunctionCall1(numeric_out,
 										  PointerGetDatum(v->val.numeric))));
 				break;
+			case jbvObject:
+			case jbvArray:
+				v = JsonValueWrapInBinary(v, &vbuf);
+				/* fall through */
 			case jbvBinary:
 				{
 					StringInfo	jtext = makeStringInfo();
@@ -669,6 +674,7 @@ jsonb_array_element_text(PG_FUNCTION_ARGS)
 	Jsonb	   *jb = PG_GETARG_JSONB(0);
 	int			element = PG_GETARG_INT32(1);
 	JsonbValue *v;
+	JsonbValue	vbuf;
 
 	if (!JB_ROOT_IS_ARRAY(jb))
 		PG_RETURN_NULL();
@@ -705,6 +711,10 @@ jsonb_array_element_text(PG_FUNCTION_ARGS)
 				result = cstring_to_text(DatumGetCString(DirectFunctionCall1(numeric_out,
 										  PointerGetDatum(v->val.numeric))));
 				break;
+			case jbvObject:
+			case jbvArray:
+				v = JsonValueWrapInBinary(v, &vbuf);
+				/* fall through */
 			case jbvBinary:
 				{
 					StringInfo	jtext = makeStringInfo();
@@ -1335,6 +1345,8 @@ get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text)
 		{
 			have_object = jbvp->type == jbvObject;
 			have_array = jbvp->type == jbvArray;
+			if (have_object || have_array)
+				container = JsonValueToContainer(jbvp);
 		}
 	}
 
@@ -2423,6 +2435,8 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 				else if (v->type == jbvNumeric)
 					s = DatumGetCString(DirectFunctionCall1(numeric_out,
 										   PointerGetDatum(v->val.numeric)));
+				else if (v->type == jbvObject || v->type == jbvArray)
+					s = JsonbToCString(NULL, JsonValueToContainer(v), 0);
 				else if (v->type == jbvBinary)
 					s = JsonbToCString(NULL, (JsonbContainer *) v->val.binary.data, v->val.binary.len);
 				else
@@ -2722,6 +2736,8 @@ make_row_from_rec_and_jsonb(Jsonb *element, PopulateRecordsetState *state)
 			else if (v->type == jbvNumeric)
 				s = DatumGetCString(DirectFunctionCall1(numeric_out,
 										   PointerGetDatum(v->val.numeric)));
+			else if (v->type == jbvObject || v->type == jbvArray)
+				s = JsonbToCString(NULL, JsonValueToContainer(v), 0);
 			else if (v->type == jbvBinary)
 				s = JsonbToCString(NULL, (JsonbContainer *) v->val.binary.data, v->val.binary.len);
 			else

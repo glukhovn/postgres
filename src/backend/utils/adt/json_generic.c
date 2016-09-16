@@ -149,6 +149,22 @@ JsonValueUnwrap(const JsonValue *val, JsonValue *valbuf)
 }
 
 JsonValue *
+JsonValueWrapInBinary(const JsonValue *val, JsonValue *bin)
+{
+	JsonContainer *jc = JsonValueToContainer(val);
+
+	if (!bin)
+		bin = (JsonValue *) palloc(sizeof(JsonValue));
+
+	bin->type = jbvBinary;
+	bin->val.binary.data = jc;
+	bin->val.binary.len = jc->len;
+	bin->val.binary.uniquified = JsonValueIsUniquified(val);
+
+	return bin;
+}
+
+JsonValue *
 jsonFindKeyInObject(JsonContainer *obj, const JsonValue *key)
 {
 	JsonValue		   *val = palloc(sizeof(JsonValue));
@@ -535,17 +551,6 @@ jsonvFindKeyInObject(JsonContainer *objc, const JsonValue *key)
 		JsonPair *pair = &obj->val.object.pairs[i];
 		if (!lengthCompareJsonbStringValue(key, &pair->key))
 		{
-			if (pair->value.type == jbvObject ||
-				pair->value.type == jbvArray)
-			{	/* FIXME need to wrap containers into binary JsonValue */
-				JsonContainer *jc = JsonValueToContainer(&pair->value);
-				JsonValue  *jv = (JsonValue *) palloc(sizeof(JsonValue));
-				jv->type = jbvBinary;
-				jv->val.binary.data = jc;
-				jv->val.binary.len = jc->len;
-				jv->val.binary.uniquified = JsonValueIsUniquified(&pair->value);
-				return jv;
-			}
 
 			return &pair->value; /* FIXME palloced copy */
 		}
