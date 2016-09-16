@@ -3018,6 +3018,7 @@ jsontContainerOps =
 	jsonGetArrayElement,
 	jsontGetArraySize,
 	jsontToString,
+	JsonCopyFlat,
 };
 
 static Datum

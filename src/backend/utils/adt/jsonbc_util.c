@@ -1281,7 +1281,8 @@ jsonbcCompressionOptionsOps =
 {
 	jsonbcEncodeOptions,
 	jsonbcDecodeOptions,
-	jsonbcOptionsAreEqual
+	jsonbcOptionsAreEqual,
+	NULL,
 };
 
 JsonContainerOps
@@ -1294,7 +1295,8 @@ jsonbcContainerOps =
 	jsonbcFindValueInArray,
 	jsonbcGetArrayElement,
 	jsonbcGetArraySize,
-	JsonbToCStringRaw
+	JsonbToCStringRaw,
+	JsonCopyFlat,
 };
 
 void
