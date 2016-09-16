@@ -687,6 +687,7 @@ jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
 							JBE_LENGTH(entry),
 							dictId);
 		result->val.binary.len = result->val.binary.data->len;
+		result->val.binary.uniquified = true;
 	}
 }
 
@@ -778,6 +779,7 @@ recurse:
 			/* Set v to array on first array call */
 			val->type = jbvArray;
 			val->val.array.nElems = it->childrenSize > 0 ? -1 : 0;
+			val->val.array.elemsUniquified = false;
 
 			/*
 			 * v->val.array.elems is not actually set, because we aren't doing
@@ -846,6 +848,8 @@ recurse:
 			/* Set v to object on first object call */
 			val->type = jbvObject;
 			val->val.object.nPairs = it->childrenSize > 0 ? -1 : 0;
+			val->val.object.uniquified = true;
+			val->val.object.valuesUniquified = true;
 
 			/*
 			 * v->val.object.pairs is not actually set, because we aren't

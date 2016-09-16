@@ -10,11 +10,12 @@
 
 #include "utils/json_generic.h"
 #include "utils/memutils.h"
+#include "utils/builtins.h"
 
 static Json *JsonExpand(Datum value, JsonContainerOps *ops,
 						CompressionOptions opts, Json *tmp);
 
-static JsonContainerOps jsonvContainerOps;
+JsonContainerOps jsonvContainerOps;
 
 #if 0
 static JsonValue *
@@ -246,6 +247,7 @@ jsonvArrayIteratorNext(JsonIterator **it, JsonValue *res, bool skipNested)
 			Assert(res->type == jbvArray || res->type == jbvObject);
 			res->val.binary.data = JsonValueToContainer(val);
 			res->val.binary.len = 0;
+			res->val.binary.uniquified = JsonValueIsUniquified(val);
 			res->type = jbvBinary;
 		}
 	}
@@ -298,6 +300,8 @@ jsonvObjectIteratorNext(JsonIterator **it, JsonValue *res, bool skipNested)
 				Assert(res->type == jbvArray || res->type == jbvObject);
 				res->val.binary.data = JsonValueToContainer(&pair->value);
 				res->val.binary.len = 0;
+				res->val.binary.uniquified =
+											JsonValueIsUniquified(&pair->value);
 				res->type = jbvBinary;
 			}
 		}
@@ -418,6 +422,7 @@ jsonvFindKeyInObject(JsonContainer *objc, const JsonValue *key)
 				jv->type = jbvBinary;
 				jv->val.binary.data = jc;
 				jv->val.binary.len = jc->len;
+				jv->val.binary.uniquified = JsonValueIsUniquified(&pair->value);
 				return jv;
 			}
 
@@ -499,7 +504,7 @@ jsonvGetArraySize(JsonContainer *arrc)
 	return arr->val.array.nElems;
 }
 
-static JsonContainerOps
+JsonContainerOps
 jsonvContainerOps =
 {
 		NULL,
@@ -524,6 +529,7 @@ JsonToJsonValue(Json *json, JsonValue *jv)
 	jv->type = jbvBinary;
 	jv->val.binary.data = &json->root;
 	jv->val.binary.len = json->root.len;
+	jv->val.binary.uniquified = json->root.ops != &jsontContainerOps;
 
 	return jv;
 }
@@ -662,17 +668,34 @@ JsonInit(Json *json)
 #define flatContainerOps &jsonbContainerOps
 
 static Size
-jsonGetFlatSize2(Json *json, void **context)
+jsonGetFlatSizeJsont(Json *json, void **context)
 {
-	Size		size;
-#ifdef JSON_FLATTEN_INTO_JSON
-	char	   *str = JsonToCString(JsonRoot(json));
+	Size	size;
+	char   *str = JsonToCString(JsonRoot(json));
 	size = VARHDRSZ + strlen(str);
 	if (context)
 		*context = str;
 	else
 		pfree(str);
+	return size;
+}
+
+static void *
+jsonFlattenJsont(Json *json, void **context)
+{
+	char   *str = context ? (char *) *context : JsonToCString(JsonRoot(json));
+	text   *text = cstring_to_text(str);
+	pfree(str);
+	return text;
+}
+
+static Size
+jsonGetFlatSize2(Json *json, void **context)
+{
+#ifdef JSON_FLATTEN_INTO_JSONT
+	return jsonGetFlatSizeJsont(json, context);
 #else
+	Size		size;
 	JsonValue	val;
 # ifdef JSON_FLATTEN_INTO_JSONBC
 	void	   *js = JsonValueToJsonbc(JsonToJsonValue(json, &val));
@@ -692,11 +715,8 @@ jsonGetFlatSize2(Json *json, void **context)
 static void *
 jsonFlatten(Json *json, void **context)
 {
-#ifdef JSON_FLATTEN_INTO_JSON
-	char   *str = context ? (char *) *context : JsonToCString(JsonRoot(json));
-	text   *text = cstring_to_text(str);
-	pfree(str);
-	return text;
+#ifdef JSON_FLATTEN_INTO_JSONT
+	return jsonFlattenJsont(json, context)
 #else
 	if (context)
 		return *context;
@@ -727,9 +747,21 @@ jsonGetFlatSize(ExpandedObjectHeader *eoh, void **context)
 
 		if (json->root.ops == &jsonvContainerOps)
 		{
+			JsonValue *val = (JsonValue *) flat->data;
+
+			if (JsonValueIsUniquified(val))
+			{
+				tmp.len = jsonGetFlatSize2(json, context) - VARHDRSZ;
+				tmp.ops = flatContainerOps;
+			}
+			else
+			{
+				tmp.len = jsonGetFlatSizeJsont(json, context) - VARHDRSZ;
+				tmp.ops = &jsontContainerOps;
+			}
+
 			tmp.data = NULL;
-			tmp.ops = flatContainerOps;
-			tmp.len = jsonGetFlatSize2(json, context) - VARHDRSZ;
+
 			flat = &tmp;
 		}
 
@@ -756,11 +788,21 @@ jsonFlattenInto(ExpandedObjectHeader *eoh, void *result, Size allocated_size,
 
 		if (flat->ops == &jsonvContainerOps)
 		{
-			tmpData = jsonFlatten(json, context);
+			JsonValue *val = (JsonValue *) flat->data;
 
-			tmp.ops = flatContainerOps;
+			if (JsonValueIsUniquified(val))
+			{
+				tmpData = jsonFlatten(json, context);
+				tmp.ops = flatContainerOps;
+			}
+			else
+			{
+				tmpData = jsonFlattenJsont(json, context);
+				tmp.ops = &jsontContainerOps;
+			}
+
 			tmp.data = VARDATA(tmpData);
-			tmp.len = VARSIZE_ANY_EXHDR(tmpData);
+			tmp.len = VARSIZE(tmpData) - VARHDRSZ;
 
 			flat = &tmp;
 		}

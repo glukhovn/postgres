@@ -12,7 +12,7 @@
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
-
+#include "miscadmin.h"
 #include "access/compression.h"
 #include "access/hash.h"
 #include "catalog/pg_type.h"
@@ -98,6 +98,7 @@ static void appendValue(JsonbParseState *pstate, const JsonbValue *scalarVal);
 static void appendElement(JsonbParseState *pstate, const JsonbValue *scalarVal);
 static int	lengthCompareJsonbPair(const void *a, const void *b, void *arg);
 static void uniqueifyJsonbObject(JsonbValue *object);
+static JsonValue *JsonValueUniquify(JsonValue *res, const JsonValue *val);
 extern JsonbValue *pushJsonbValueScalar(JsonbParseState **pstate,
 										JsonbIteratorToken seq,
 										const JsonbValue *scalarVal);
@@ -137,6 +138,8 @@ void *
 JsonValueFlatten(const JsonValue *val, JsonValueEncoder encoder,
 				 JsonContainerOps *ops, CompressionOptions options)
 {
+	JsonValue uniquified;
+
 	if (IsAJsonbScalar(val))
 	{
 		JsonbParseState *pstate = NULL;
@@ -160,6 +163,8 @@ JsonValueFlatten(const JsonValue *val, JsonValueEncoder encoder,
 	else
 	{
 		Assert(val->type == jbvObject || val->type == jbvArray);
+		if (!JsonValueIsUniquified(val))
+			val = JsonValueUniquify(&uniquified, val);
 	}
 
 	return convertToJsonb(val, encoder, options);
@@ -609,6 +614,7 @@ fillJsonbValue(const JsonbContainer *container, int index,
 						   getJsonbLength(container, index) -
 								(INTALIGN(offset) - offset));
 		result->val.binary.len = result->val.binary.data->len;
+		result->val.binary.uniquified = true;
 	}
 }
 
@@ -713,6 +719,7 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			}
 			(*pstate)->contVal.val.array.elems = palloc(sizeof(JsonbValue) *
 														(*pstate)->size);
+			(*pstate)->contVal.val.array.elemsUniquified = true;
 			break;
 		case WJB_BEGIN_OBJECT:
 			Assert(!scalarVal);
@@ -723,6 +730,8 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			(*pstate)->size = 4;
 			(*pstate)->contVal.val.object.pairs = palloc(sizeof(JsonbPair) *
 														 (*pstate)->size);
+			(*pstate)->contVal.val.object.uniquified = true;
+			(*pstate)->contVal.val.object.valuesUniquified = true;
 			break;
 		case WJB_KEY:
 			Assert(scalarVal->type == jbvString);
@@ -737,7 +746,8 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			appendElement(*pstate, scalarVal);
 			break;
 		case WJB_END_OBJECT:
-			uniqueifyJsonbObject(&(*pstate)->contVal);
+			if ((*pstate)->contVal.val.object.uniquified)
+				uniqueifyJsonbObject(&(*pstate)->contVal);
 			/* fall through! */
 		case WJB_END_ARRAY:
 			/* Steps here common to WJB_END_OBJECT case */
@@ -866,6 +876,7 @@ appendValue(JsonbParseState *pstate, const JsonbValue *scalarVal)
 	Assert(object->type == jbvObject);
 
 	object->val.object.pairs[object->val.object.nPairs++].value = *scalarVal;
+	object->val.object.valuesUniquified &= JsonValueIsUniquified(scalarVal);
 }
 
 /*
@@ -892,6 +903,7 @@ appendElement(JsonbParseState *pstate, const JsonbValue *scalarVal)
 	}
 
 	array->val.array.elems[array->val.array.nElems++] = *scalarVal;
+	array->val.array.elemsUniquified &= JsonValueIsUniquified(scalarVal);
 }
 
 /*
@@ -951,6 +963,7 @@ recurse:
 			 * a full conversion
 			 */
 			val->val.array.rawScalar = (*it)->isScalar;
+			val->val.array.elemsUniquified = true;
 			(*it)->curIndex = 0;
 			(*it)->curDataOffset = 0;
 			(*it)->curValueOffset = 0;	/* not actually used */
@@ -999,6 +1012,8 @@ recurse:
 			/* Set v to object on first object call */
 			val->type = jbvObject;
 			val->val.object.nPairs = (*it)->nElems;
+			val->val.object.uniquified = true;
+			val->val.object.valuesUniquified = true;
 
 			/*
 			 * v->val.object.pairs is not actually set, because we aren't
@@ -2007,6 +2022,57 @@ uniqueifyJsonbObject(JsonbValue *object)
 	}
 }
 
+static JsonValue *
+JsonValueUniquify(JsonValue *res, const JsonValue *val)
+{
+	check_stack_depth();
+
+	if (val->type == jbvObject &&
+		(!val->val.object.valuesUniquified || !val->val.object.uniquified))
+	{
+		int	nPairs = val->val.object.nPairs;
+		int	i;
+
+		res->type = jbvObject;
+		res->val.object.nPairs = nPairs;
+		res->val.object.pairs = palloc(sizeof(JsonPair) * nPairs);
+		res->val.object.uniquified = true;
+		res->val.object.valuesUniquified = true;
+
+		if (val->val.object.valuesUniquified)
+			memcpy(res->val.object.pairs, val->val.object.pairs,
+				   sizeof(JsonPair) * nPairs);
+		else
+			for (i = 0; i < nPairs; i++)
+			{
+				res->val.object.pairs[i].key = val->val.object.pairs[i].key;
+				JsonValueUniquify(&res->val.object.pairs[i].value,
+								  &val->val.object.pairs[i].value);
+			}
+
+		if (!val->val.object.uniquified)
+			uniqueifyJsonbObject(res);
+	}
+	else if (val->type == jbvArray && !val->val.array.elemsUniquified)
+	{
+		int	nElems = val->val.array.nElems;
+		int	i;
+
+		res->type = jbvArray;
+		res->val.array.nElems = nElems;
+		res->val.array.elems = palloc(sizeof(JsonValue) * nElems);
+		res->val.array.elemsUniquified = true;
+		res->val.array.rawScalar = val->val.array.rawScalar;
+
+		for (i = 0; i < nElems; i++)
+			JsonValueUniquify(&res->val.array.elems[i],
+							  &val->val.array.elems[i]);
+	}
+	else
+		*res = *val;
+
+	return res;
+}
 
 static void
 jsonbInitContainer(JsonContainerData *jc, JsonbContainer *jbc, int len)

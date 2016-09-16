@@ -286,5 +286,6 @@ extern int lengthCompareJsonbStringValue(const void *a, const void *b);
 
 extern JsonContainerOps jsonbContainerOps;
 extern JsonContainerOps jsontContainerOps;
+extern JsonContainerOps jsonvContainerOps;
 
 #endif /* UTILS_JSON_GENERIC_H */

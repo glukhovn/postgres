@@ -452,6 +452,7 @@ JsonbToCStringWorker(StringInfo out, JsonbContainer *in, int estimated_len,
 	bool		use_indent = false;
 	bool		raw_scalar = false;
 	bool		last_was_key = false;
+	bool		object_is_uniquified = true;
 
 	if (out == NULL)
 		out = makeStringInfo();
@@ -482,6 +483,9 @@ JsonbToCStringWorker(StringInfo out, JsonbContainer *in, int estimated_len,
 				level++;
 				break;
 			case WJB_BEGIN_OBJECT:
+				if (skipNested)
+					object_is_uniquified = v.val.object.uniquified;
+
 				if (!first)
 					appendBinaryStringInfo(out, ", ", ispaces);
 
@@ -500,7 +504,9 @@ JsonbToCStringWorker(StringInfo out, JsonbContainer *in, int estimated_len,
 
 				/* json rules guarantee this is a string */
 				jsonb_put_escaped_value(out, &v);
-				appendBinaryStringInfo(out, ": ", 2);
+				appendBinaryStringInfo(out,
+									   object_is_uniquified ? ": " : " : ",
+									   object_is_uniquified ? 2 : 3);
 
 				type = JsonbIteratorNext(&it, &v, skipNested);
 				if (type == WJB_VALUE)
@@ -1163,6 +1169,9 @@ jsonb_build_object(PG_FUNCTION_ARGS)
 	memset(&result, 0, sizeof(JsonbInState));
 
 	result.res = pushJsonbValue(&result.parseState, WJB_BEGIN_OBJECT, NULL);
+#ifdef JSON_C
+	result.res->val.object.uniquified = false;
+#endif
 
 	for (i = 0; i < nargs; i += 2)
 	{
@@ -1317,10 +1326,14 @@ jsonb_object(PG_FUNCTION_ARGS)
 				count,
 				i;
 	JsonbInState result;
+	JsonbValue *obj;
 
 	memset(&result, 0, sizeof(JsonbInState));
 
-	(void) pushJsonbValue(&result.parseState, WJB_BEGIN_OBJECT, NULL);
+	obj = pushJsonbValue(&result.parseState, WJB_BEGIN_OBJECT, NULL);
+#ifdef JSON_C
+	obj->val.object.uniquified = false;
+#endif
 
 	switch (ndims)
 	{
@@ -1423,10 +1436,14 @@ jsonb_object_two_arg(PG_FUNCTION_ARGS)
 				val_count,
 				i;
 	JsonbInState result;
+	JsonbValue *obj;
 
 	memset(&result, 0, sizeof(JsonbInState));
 
-	(void) pushJsonbValue(&result.parseState, WJB_BEGIN_OBJECT, NULL);
+	obj = pushJsonbValue(&result.parseState, WJB_BEGIN_OBJECT, NULL);
+#ifdef JSON_C
+	obj->val.object.uniquified = false;
+#endif
 
 	if (nkdims > 1 || nkdims != nvdims)
 		ereport(ERROR,
