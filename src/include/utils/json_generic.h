@@ -96,9 +96,6 @@ typedef struct Json
 #define JsonIsTemporary(json) \
 		((json)->obj.eoh.vl_len_ != EOH_HEADER_MAGIC)
 
-#define JsonGetNonTemporary(json) \
-		(JsonIsTemporary(json) ? JsonCopyTemporary(json) : (json))
-
 #define JsonGetDatum(json) \
 		EOHPGetRODatum(&JsonGetNonTemporary(json)->obj.eoh)
 
@@ -232,6 +229,12 @@ JsonIteratorFreeAndGetParent(JsonIterator *it)
 	JsonIterator *parent = it->parent;
 	pfree(it);
 	return parent;
+}
+
+static inline Json *
+JsonGetNonTemporary(Json *json)
+{
+	return JsonIsTemporary(json) ? JsonCopyTemporary(json) : json;
 }
 
 extern Json *JsonValueToJson(JsonValue *val);
