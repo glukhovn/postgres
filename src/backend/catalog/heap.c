@@ -31,6 +31,7 @@
 
 #include "access/htup_details.h"
 #include "access/multixact.h"
+#include "access/reloptions.h"
 #include "access/sysattr.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -1470,6 +1471,32 @@ DeleteRelationTuple(Oid relid)
 	heap_close(pg_class_desc, RowExclusiveLock);
 }
 
+static void
+DropAttributeCompression(HeapTuple tuple)
+{
+	Form_pg_attribute			att = (Form_pg_attribute) GETSTRUCT(tuple);
+	CompressionMethodRoutine   *cmr =
+						GetCompressionMethodRoutineByCmId(att->attcompression);
+
+	if (cmr->dropAttr)
+	{
+		List *options = NIL;
+
+		if (cmr->options)
+		{
+			bool	isnull;
+			Datum	cmoptions = SysCacheGetAttr(ATTNUM,
+												tuple,
+												Anum_pg_attribute_attcmoptions,
+												&isnull);
+			if (!isnull)
+				options = untransformRelOptions(cmoptions);
+		}
+
+		cmr->dropAttr(att, options);
+	}
+}
+
 /*
  *		DeleteAttributeTuples
  *
@@ -1500,7 +1527,12 @@ DeleteAttributeTuples(Oid relid)
 
 	/* Delete all the matching tuples */
 	while ((atttup = systable_getnext(scan)) != NULL)
+	{
+		if (OidIsValid(((Form_pg_attribute) GETSTRUCT(atttup))->attcompression))
+			DropAttributeCompression(atttup);
+
 		simple_heap_delete(attrel, &atttup->t_self);
+	}
 
 	/* Clean up after the scan */
 	systable_endscan(scan);
@@ -1593,6 +1625,8 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 	else
 	{
 		/* Dropping user attributes is lots harder */
+		if (OidIsValid(attStruct->attcompression))
+			DropAttributeCompression(tuple);
 
 		/* Mark the attribute as dropped */
 		attStruct->attisdropped = true;
@@ -1614,7 +1648,7 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 		/* We don't want to keep stats for it anymore */
 		attStruct->attstattarget = 0;
 
-		attStruct->attcompression = InvalidOid;
+		attStruct->attcompression = InvalidOid; /* FIXME clear attcmoptions */
 
 		/*
 		 * Change the column name to something that isn't likely to conflict
