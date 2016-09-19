@@ -154,6 +154,7 @@ static void setPathArray(JsonbIterator **it, Datum *path_elems,
 			 bool *path_nulls, int path_len, JsonbParseState **st,
 			 int level, Jsonb *newval, uint32 nelems, int op_type);
 static void addJsonbToParseState(JsonbParseState **jbps, Jsonb *jb);
+static Datum jsonb_strip_nulls_internal(Jsonb *jb);
 
 /* state for json_object_keys */
 typedef struct OkeysState
@@ -3197,7 +3198,9 @@ findJsonbValueFromContainerLen(JsonbContainer *container, uint32 flags,
 
 	return findJsonbValueFromContainer(container, flags, &k);
 }
+#endif
 
+#ifdef JSON_C
 /*
  * Semantic actions for json_strip_nulls.
  *
@@ -3300,12 +3303,24 @@ sn_scalar(void *state, char *token, JsonTokenType tokentype)
 Datum
 json_strip_nulls(PG_FUNCTION_ARGS)
 {
+#ifdef JSON_GENERIC
+	Json	   *json = PG_GETARG_JSONB(0);
+#else
 	text	   *json = PG_GETARG_TEXT_P(0);
+#endif
 	StripnullState *state;
 	JsonLexContext *lex;
 	JsonSemAction *sem;
 
+#ifdef JSON_GENERIC
+	if (json->root.ops != &jsontContainerOps)
+		return jsonb_strip_nulls_internal(json);
+
+	lex = makeJsonLexContextCstringLen(json->root.data, json->root.len, true);
+#else
 	lex = makeJsonLexContext(json, true);
+#endif
+
 	state = palloc0(sizeof(StripnullState));
 	sem = palloc0(sizeof(JsonSemAction));
 
@@ -3328,7 +3343,7 @@ json_strip_nulls(PG_FUNCTION_ARGS)
 											  state->strval->len));
 
 }
-#endif
+#else
 
 /*
  * SQL function jsonb_strip_nulls(jsonb) -> jsonb
@@ -3336,7 +3351,13 @@ json_strip_nulls(PG_FUNCTION_ARGS)
 Datum
 jsonb_strip_nulls(PG_FUNCTION_ARGS)
 {
-	Jsonb	   *jb = PG_GETARG_JSONB(0);
+	return jsonb_strip_nulls_internal(PG_GETARG_JSONB(0));
+}
+#endif
+
+static Datum
+jsonb_strip_nulls_internal(Jsonb *jb)
+{
 	JsonbIterator *it;
 	JsonbParseState *parseState = NULL;
 	JsonbValue *res = NULL;
