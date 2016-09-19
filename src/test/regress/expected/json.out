@@ -1663,6 +1663,7 @@ select json_strip_nulls('{"a": {"b": null, "c": null}, "d": {} }');
  json_strip_nulls 
 ------------------
  {"a":{},"d":{}}
+(1 row)
 
 -- equality and inequality
 SELECT '{"x":"y"}'::json = '{"x":"y"}'::json;
