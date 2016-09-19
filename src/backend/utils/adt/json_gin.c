@@ -20,6 +20,7 @@
 
 #include "utils/json_generic.h"
 
-#define jsonbContainerOps jsontContainerOps
+#undef PG_GETARG_JSONB
+#define PG_GETARG_JSONB(x)	DatumGetJsont(PG_GETARG_DATUM(x))
 
 #include "jsonb_gin.c"
