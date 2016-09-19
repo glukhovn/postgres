@@ -2588,7 +2588,8 @@ json_typeof(PG_FUNCTION_ARGS)
 
 #endif
 
-#define jsonbContainerOps jsontContainerOps
+#undef PG_GETARG_JSONB
+#define PG_GETARG_JSONB(x)	DatumGetJsont(PG_GETARG_DATUM(x))
 #define JSON_C
 
 #include "jsonb.c"
