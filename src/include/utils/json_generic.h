@@ -109,8 +109,18 @@ typedef struct Json
 #define DatumGetJsonbTmp(datum,tmp)	\
 		DatumGetJson(datum, &jsonbContainerOps, NULL, tmp)
 
+#define JsonIsUniquified(json) ( \
+		JsonRoot(json)->ops == &jsontContainerOps ? false : \
+		JsonRoot(json)->ops == &jsonvContainerOps ? \
+			JsonValueIsUniquified((JsonValue *) JsonRoot(json)->data) : true \
+	)
+
 #undef JsonbGetDatum
-#define JsonbGetDatum(json)			JsonGetDatum(json)
+#ifdef JSON_C
+# define JsonbGetDatum(json)		JsonGetDatum(json)
+#else
+# define JsonbGetDatum(json)		JsonGetDatum(JsonGetUniquified(json))
+#endif
 
 #define PG_GETARG_JSONB_TMP(n, tmp)	DatumGetJsonbTmp(PG_GETARG_DATUM(n), tmp)
 
@@ -198,11 +208,16 @@ typedef struct Json
 #define compareJsonbContainers			JsonCompareContainers
 #define equalsJsonbScalarValue			JsonValueScalarEquals
 
+extern JsonContainerOps jsonbContainerOps;
+extern JsonContainerOps jsontContainerOps;
+extern JsonContainerOps jsonvContainerOps;
+
 extern Json *DatumGetJson(Datum val, JsonContainerOps *ops,
 						  CompressionOptions options, Json *tmp);
 
 extern void JsonFree(Json *json);
 extern Json *JsonCopyTemporary(Json *tmp);
+extern Json *JsonUniquify(Json *json);
 
 #define JsonContainerAlloc() \
 	((JsonContainerData *) palloc(sizeof(JsonContainerData)))
@@ -235,6 +250,12 @@ static inline Json *
 JsonGetNonTemporary(Json *json)
 {
 	return JsonIsTemporary(json) ? JsonCopyTemporary(json) : json;
+}
+
+static inline Json *
+JsonGetUniquified(Json *json)
+{
+	return JsonIsUniquified(json) ? json : JsonUniquify(json);
 }
 
 extern Json *JsonValueToJson(JsonValue *val);
@@ -296,9 +317,5 @@ extern void JsonbcEncode(StringInfo, const JsonValue *, CompressionOptions);
 		JsonValueFlatten(val, JsonbcEncode, &jsonbcContainerOps, options)
 
 extern int lengthCompareJsonbStringValue(const void *a, const void *b);
-
-extern JsonContainerOps jsonbContainerOps;
-extern JsonContainerOps jsontContainerOps;
-extern JsonContainerOps jsonvContainerOps;
 
 #endif /* UTILS_JSON_GENERIC_H */
