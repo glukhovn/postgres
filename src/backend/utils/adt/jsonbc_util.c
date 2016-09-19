@@ -607,12 +607,7 @@ jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val, int level,
 	if (!val)
 		return 0;
 
-	/*
-	 * A JsonbcValue passed as val should never have a type of jbvBinary, and
-	 * neither should any of its sub-components. Those values will be produced
-	 * by convertJsonbcArray and convertJsonbcObject, the results of which will
-	 * not be passed back to this function as an argument.
-	 */
+	Assert(JsonValueIsUniquified(val));
 
 	if (IsAJsonbScalar(val))
 		return jsonbcEncodeScalar(buffer, val);

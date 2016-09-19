@@ -145,24 +145,28 @@ JsonValueFlatten(const JsonValue *val, JsonValueEncoder encoder,
 		JsonbParseState *pstate = NULL;
 		val = pushSingleScalarJsonbValue(&pstate, val, true);
 	}
-	else if (val->type == jbvBinary)
-	{
-		JsonContainer *jc = val->val.binary.data;
-
-		if (jc->ops == ops &&
-			(!jc->ops->compressionOps ||
-			  jc->ops->compressionOps->optionsAreEqual(jc, options)))
-		{
-			int		size = jc->len;
-			void   *out = palloc(VARHDRSZ + size);
-			SET_VARSIZE(out, VARHDRSZ + size);
-			memcpy(VARDATA(out), jc->data, size);
-			return out;
-		}
-	}
 	else
 	{
-		Assert(val->type == jbvObject || val->type == jbvArray);
+		if (val->type == jbvBinary)
+		{
+			JsonContainer *jc = val->val.binary.data;
+
+			if (jc->ops == ops &&
+				(!jc->ops->compressionOps ||
+				  jc->ops->compressionOps->optionsAreEqual(jc, options)))
+			{
+				int		size = jc->len;
+				void   *out = palloc(VARHDRSZ + size);
+				SET_VARSIZE(out, VARHDRSZ + size);
+				memcpy(VARDATA(out), jc->data, size);
+				return out;
+			}
+		}
+		else
+		{
+			Assert(val->type == jbvObject || val->type == jbvArray);
+		}
+
 		if (!JsonValueIsUniquified(val))
 			val = JsonValueUniquify(&uniquified, val);
 	}
@@ -1640,12 +1644,7 @@ convertJsonbValue(StringInfo buffer, JEntry *header, const JsonbValue *val, int 
 	if (!val)
 		return;
 
-	/*
-	 * A JsonbValue passed as val should never have a type of jbvBinary, and
-	 * neither should any of its sub-components. Those values will be produced
-	 * by convertJsonbArray and convertJsonbObject, the results of which will
-	 * not be passed back to this function as an argument.
-	 */
+	Assert(JsonValueIsUniquified(val));
 
 	if (IsAJsonbScalar(val))
 		convertJsonbScalar(buffer, header, val);
@@ -2074,6 +2073,17 @@ JsonValueUniquify(JsonValue *res, const JsonValue *val)
 		for (i = 0; i < nElems; i++)
 			JsonValueUniquify(&res->val.array.elems[i],
 							  &val->val.array.elems[i]);
+	}
+	else if (val->type == jbvBinary && !val->val.binary.uniquified)
+	{
+		JsonContainer *jc = val->val.binary.data;
+
+		Assert(jc->ops == &jsontContainerOps);
+
+		if (jc->ops == &jsonvContainerOps)
+			JsonValueUniquify(res, jc->data);
+		else
+			*res = *JsonValueUnpackBinary(val);
 	}
 	else
 		*res = *val;
