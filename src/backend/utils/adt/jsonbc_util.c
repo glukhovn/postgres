@@ -774,7 +774,8 @@ recurse:
 			/* Set v to array on first array call */
 			val->type = jbvArray;
 			val->val.array.nElems = it->childrenSize > 0 ? -1 : 0;
-			val->val.array.elemsUniquified = false;
+			val->val.array.uniquified = true;
+			val->val.array.elemsUniquified = true;
 
 			/*
 			 * v->val.array.elems is not actually set, because we aren't doing

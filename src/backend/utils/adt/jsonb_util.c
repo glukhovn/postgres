@@ -726,6 +726,7 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			}
 			(*pstate)->contVal.val.array.elems = palloc(sizeof(JsonbValue) *
 														(*pstate)->size);
+			(*pstate)->contVal.val.array.uniquified = true;
 			(*pstate)->contVal.val.array.elemsUniquified = true;
 			break;
 		case WJB_BEGIN_OBJECT:
@@ -970,6 +971,7 @@ recurse:
 			 * a full conversion
 			 */
 			val->val.array.rawScalar = (*it)->isScalar;
+			val->val.array.uniquified = true;
 			val->val.array.elemsUniquified = true;
 			(*it)->curIndex = 0;
 			(*it)->curDataOffset = 0;

@@ -271,13 +271,22 @@ struct JsonbValue
 			int			nElems;
 			JsonbValue *elems;
 			bool		rawScalar;		/* Top-level "raw scalar" array? */
+			bool		uniquified;
 			bool		elemsUniquified;
+			char		elementSeparator[3];
 		}			array;		/* Array container type */
 
 		struct
 		{
 			bool		uniquified;
 			bool		valuesUniquified;
+			char		fieldSeparator;
+			char		braceSeparator;
+			struct
+			{
+				char	before;
+				char	after;
+			}			colonSeparator;
 			int			nPairs; /* 1 pair, 2 elements */
 			JsonbPair  *pairs;
 		}			object;		/* Associative container type */
@@ -298,7 +307,8 @@ struct JsonbValue
 	((v)->type == jbvBinary ? (v)->val.binary.uniquified : \
 	 (v)->type == jbvObject ? (v)->val.object.uniquified && \
 							  (v)->val.object.valuesUniquified : \
-	 (v)->type == jbvArray ?  (v)->val.array.elemsUniquified : true)
+	 (v)->type == jbvArray ?  (v)->val.array.uniquified && \
+							  (v)->val.array.elemsUniquified : true)
 
 
 /*
