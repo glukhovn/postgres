@@ -406,6 +406,35 @@ jsonbcDictAddRef(Form_pg_attribute attr, JsonbcDictId dict)
 #endif
 }
 
+static SPIPlanPtr savedPlanClear = NULL;
+
+static void
+jsonbcClearDictionary(JsonbcDictId dict)
+{
+	Oid		argTypes[1] = {JsonbcDictIdTypeOid};
+	Datum	args[1];
+
+	SPI_connect();
+
+	if (!savedPlanClear)
+	{
+		savedPlanClear = SPI_prepare(
+				"DELETE FROM "JSONBC_DICT_TAB" WHERE dict = $1;",
+				lengthof(argTypes), argTypes);
+		if (!savedPlanClear)
+			elog(ERROR, "Error preparing query");
+		if (SPI_keepplan(savedPlanClear))
+			elog(ERROR, "Error keeping plan");
+	}
+
+	args[0] = JsonbcDictIdGetDatum(dict);
+
+	if (SPI_execute_plan(savedPlanClear, args, NULL, false, 0) < 0)
+		elog(ERROR, "Failed to clear dictionary");
+
+	SPI_finish();
+}
+
 void
 jsonbcDictRemoveRef(Form_pg_attribute att, JsonbcDictId dict)
 {
@@ -415,7 +444,7 @@ jsonbcDictRemoveRef(Form_pg_attribute att, JsonbcDictId dict)
 								  RelationRelationId, att->attrelid, att->attnum,
 								  InvalidOid, &totalCount);
 
-	Assert(cnt == 1);
+	Assert(cnt <= 1);
 
 	if (cnt == 1 && totalCount == 1)
 	{
@@ -424,6 +453,9 @@ jsonbcDictRemoveRef(Form_pg_attribute att, JsonbcDictId dict)
 		CommandCounterIncrement(); /* FIXME */
 		performDeletion(&seqaddr, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
 	}
+
+	if (cnt <= 1 && totalCount <= 1)
+		jsonbcClearDictionary(dict);
 #endif
 }
 
