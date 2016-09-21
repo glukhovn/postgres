@@ -30,7 +30,8 @@ typedef enum
 	WJB_BEGIN_ARRAY,
 	WJB_END_ARRAY,
 	WJB_BEGIN_OBJECT,
-	WJB_END_OBJECT
+	WJB_END_OBJECT,
+	WJB_RECURSE
 } JsonbIteratorToken;
 
 /* Strategy numbers for GIN index opclasses */

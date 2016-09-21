@@ -381,7 +381,7 @@ jsonvArrayIteratorNext(JsonIterator **it, JsonValue *res, bool skipNested)
 			JsonIterator *child = jsonvIteratorInitFromValue(val, NULL);
 			child->parent = *it;
 			*it = child;
-			return JsonIteratorNext(it, res, skipNested); /* FIXME recursion */
+			return WJB_RECURSE;
 		}
 		else if (res->type != jbvBinary)
 		{
@@ -434,7 +434,7 @@ jsonvObjectIteratorNext(JsonIterator **it, JsonValue *res, bool skipNested)
 						jsonvIteratorInitFromValue(&pair->value, NULL);
 				chld->parent = *it;
 				*it = chld;
-				return JsonIteratorNext(it, res, skipNested); /* FIXME recursion */
+				return WJB_RECURSE;
 			}
 			else if (res->type != jbvBinary)
 			{

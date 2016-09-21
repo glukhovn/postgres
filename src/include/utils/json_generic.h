@@ -199,8 +199,20 @@ typedef struct Json
 #define JsonCopy(jscontainer) \
 		JsonOp0(copy, jscontainer)
 
-#define JsonIteratorNext(it, val, skip) \
-		((*it) ? (*(*(it))->next)(it, val, skip) : WJB_DONE)
+static inline JsonIteratorToken
+JsonIteratorNext(JsonIterator **it, JsonValue *val, bool skipNested)
+{
+	JsonIteratorToken tok;
+
+	if (!*it)
+		return WJB_DONE;
+
+	do
+		tok = (*it)->next(it, val, skipNested);
+	while (tok == WJB_RECURSE);
+
+	return tok;
+}
 
 #define getIthJsonbValueFromContainer	JsonGetArrayElement
 #define findJsonbValueFromContainer		JsonFindValueInContainer
