@@ -3640,6 +3640,9 @@ AlterTypeDefaultCompression(Oid typeid, ColumnCompression *compression)
 			? GetCompressionMethodOid(compression->methodName, typeid, false)
 			: InvalidOid;
 
+	if (cmoid == oldtype->typnullcm)
+		cmoid = InvalidOid;
+
 	if (oldtype->typdefaultcm != cmoid)
 	{
 		Relation	typrel;
@@ -3669,9 +3672,12 @@ AlterTypeDefaultCompression(Oid typeid, ColumnCompression *compression)
 		heap_close(typrel, RowExclusiveLock);
 
 		if (OidIsValid(oldtype->typdefaultcm))
+		{
+			Assert(oldtype->typdefaultcm != oldtype->typnullcm);
 			deleteDependencyRecordsForClass(TypeRelationId, typeid, 0,
 											CompressionMethodRelationId,
 											DEPENDENCY_NORMAL);
+		}
 
 		if (OidIsValid(cmoid))
 		{
