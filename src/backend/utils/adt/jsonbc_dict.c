@@ -446,16 +446,18 @@ jsonbcDictRemoveRef(Form_pg_attribute att, JsonbcDictId dict)
 
 	Assert(cnt <= 1);
 
-	if (cnt == 1 && totalCount == 1)
+	if (cnt == totalCount)
 	{
-		ObjectAddress seqaddr;
-		ObjectAddressSet(seqaddr, RelationRelationId, dict);
-		CommandCounterIncrement(); /* FIXME */
-		performDeletion(&seqaddr, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
-	}
+		if (cnt > 0)
+		{
+			ObjectAddress seqaddr;
+			ObjectAddressSet(seqaddr, RelationRelationId, dict);
+			CommandCounterIncrement(); /* FIXME */
+			performDeletion(&seqaddr, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+		}
 
-	if (cnt <= 1 && totalCount <= 1)
 		jsonbcClearDictionary(dict);
+	}
 #endif
 }
 
