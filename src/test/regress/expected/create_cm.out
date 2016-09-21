@@ -146,6 +146,36 @@ FROM jstest;
  ["test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "te | ["test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "te | ["test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "te | ["test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "te | ["test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "test", "te
 (30 rows)
 
+CREATE FUNCTION jsonbc_dict_contents() RETURNS TABLE (dict name, id integer, name text)
+LANGUAGE sql AS '
+SELECT
+	c.relname dict, d.id, d.name
+FROM
+	pg_jsonbc_dict d LEFT JOIN pg_class c ON d.dict = c.oid
+ORDER BY 1, 2, 3';
+CREATE FUNCTION jsonbc_dict_deps() RETURNS TABLE (relname name, attnum integer, cmname name)
+LANGUAGE sql AS '
+SELECT
+	d.objid::regclass::name relname, d.objsubid attnum, c.cmname
+FROM
+	pg_depend d JOIN pg_compression c ON d.refobjid = c.oid
+WHERE
+	classid = ''pg_class''::regclass AND
+	refclassid = ''pg_compression''::regclass
+ORDER BY 1, 2';
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js3_jsonbc_dict_seq |  1 | key1
+ jstest_js3_jsonbc_dict_seq |  2 | key2
+ jstest_js3_jsonbc_dict_seq |  3 | k1
+ jstest_js3_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+(8 rows)
+
 -- alter column compression methods
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
@@ -165,6 +195,33 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js4_jsonbc_dict_seq | S
 (4 rows)
 
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js3_jsonbc_dict_seq |  1 | key1
+ jstest_js3_jsonbc_dict_seq |  2 | key2
+ jstest_js3_jsonbc_dict_seq |  3 | k1
+ jstest_js3_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+(12 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | jsonb2
+ jstest  |      3 | jsonbc
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+(5 rows)
+
 ALTER TABLE jstest ALTER js2 SET NOT COMPRESSED;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
@@ -175,6 +232,33 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js4_jsonbc_dict_seq | S
 (4 rows)
 
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js3_jsonbc_dict_seq |  1 | key1
+ jstest_js3_jsonbc_dict_seq |  2 | key2
+ jstest_js3_jsonbc_dict_seq |  3 | k1
+ jstest_js3_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+(12 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonbc
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+(5 rows)
+
 ALTER TABLE jstest ALTER js3 SET NOT COMPRESSED;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
@@ -183,6 +267,29 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js1_jsonbc_dict_seq | S
  jstest_js4_jsonbc_dict_seq | S
 (3 rows)
+
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+(8 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | json_null
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+(5 rows)
 
 ALTER TABLE jstest ALTER js3 SET COMPRESSED jsonb2;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
@@ -193,7 +300,31 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js4_jsonbc_dict_seq | S
 (3 rows)
 
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+(8 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonb2
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+(5 rows)
+
 ALTER TABLE jstest ADD js6 json COMPRESSED jsonbc;
+UPDATE jstest SET js6 = js1;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
 ----------------------------+---------
@@ -202,6 +333,34 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js4_jsonbc_dict_seq | S
  jstest_js6_jsonbc_dict_seq | S
 (4 rows)
+
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+ jstest_js6_jsonbc_dict_seq |  1 | key1
+ jstest_js6_jsonbc_dict_seq |  2 | key2
+ jstest_js6_jsonbc_dict_seq |  3 | k1
+ jstest_js6_jsonbc_dict_seq |  4 | k2
+(12 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonb2
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+ jstest  |      6 | jsonbc
+(6 rows)
 
 -- try to use existing jsonbc dictionary
 DO
@@ -227,6 +386,35 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js6_jsonbc_dict_seq | S
 (4 rows)
 
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+ jstest_js6_jsonbc_dict_seq |  1 | key1
+ jstest_js6_jsonbc_dict_seq |  2 | key2
+ jstest_js6_jsonbc_dict_seq |  3 | k1
+ jstest_js6_jsonbc_dict_seq |  4 | k2
+(12 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonb2
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+ jstest  |      6 | jsonbc
+ jstest  |      7 | jsonbc
+(7 rows)
+
 ALTER TABLE jstest DROP js6;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
@@ -237,7 +425,37 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js6_jsonbc_dict_seq | S
 (4 rows)
 
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+ jstest_js6_jsonbc_dict_seq |  1 | key1
+ jstest_js6_jsonbc_dict_seq |  2 | key2
+ jstest_js6_jsonbc_dict_seq |  3 | k1
+ jstest_js6_jsonbc_dict_seq |  4 | k2
+(12 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonb2
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+ jstest  |      7 | jsonbc
+(6 rows)
+
 ALTER TABLE jstest ALTER js6 SET NOT COMPRESSED;
+ERROR:  column "js6" of relation "jstest" does not exist
+ALTER TABLE jstest DROP js6;
 ERROR:  column "js6" of relation "jstest" does not exist
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
@@ -248,6 +466,34 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js6_jsonbc_dict_seq | S
 (4 rows)
 
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+ jstest_js6_jsonbc_dict_seq |  1 | key1
+ jstest_js6_jsonbc_dict_seq |  2 | key2
+ jstest_js6_jsonbc_dict_seq |  3 | k1
+ jstest_js6_jsonbc_dict_seq |  4 | k2
+(12 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonb2
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+ jstest  |      7 | jsonbc
+(6 rows)
+
 ALTER TABLE jstest ALTER js7 SET COMPRESSED jsonb2;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
           relname           | relkind 
@@ -256,6 +502,30 @@ SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  jstest_js1_jsonbc_dict_seq | S
  jstest_js4_jsonbc_dict_seq | S
 (3 rows)
+
+SELECT * FROM jsonbc_dict_contents();
+            dict            | id | name 
+----------------------------+----+------
+ jstest_js1_jsonbc_dict_seq |  1 | key1
+ jstest_js1_jsonbc_dict_seq |  2 | key2
+ jstest_js1_jsonbc_dict_seq |  3 | k1
+ jstest_js1_jsonbc_dict_seq |  4 | k2
+ jstest_js4_jsonbc_dict_seq |  1 | key1
+ jstest_js4_jsonbc_dict_seq |  2 | key2
+ jstest_js4_jsonbc_dict_seq |  3 | k1
+ jstest_js4_jsonbc_dict_seq |  4 | k2
+(8 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum |   cmname   
+---------+--------+------------
+ jstest  |      1 | jsonbc
+ jstest  |      2 | json_null
+ jstest  |      3 | jsonb2
+ jstest  |      4 | jsonbc
+ jstest  |      5 | jsonb_null
+ jstest  |      7 | jsonb2
+(6 rows)
 
 -- Try to drop compression method: fail because of dependent objects
 DROP COMPRESSION METHOD jsonb2;
@@ -269,14 +539,24 @@ NOTICE:  drop cascades to 2 other objects
 DETAIL:  drop cascades to table jstest column js3
 drop cascades to table jstest column js7
 SELECT * FROM jstest LIMIT 0;
- js1 | js2 | js4 | js5 | js6 
------+-----+-----+-----+-----
+ js1 | js2 | js4 | js5 
+-----+-----+-----+-----
 (0 rows)
 
 DROP TABLE jstest;
 SELECT relname, relkind FROM pg_class WHERE relname LIKE 'jstest%';
  relname | relkind 
 ---------+---------
+(0 rows)
+
+SELECT * FROM jsonbc_dict_contents();
+ dict | id | name 
+------+----+------
+(0 rows)
+
+SELECT * FROM jsonbc_dict_deps() WHERE relname = 'jstest';
+ relname | attnum | cmname 
+---------+--------+--------
 (0 rows)
 
 -- Test ALTER TYPE SET COMPRESSED
