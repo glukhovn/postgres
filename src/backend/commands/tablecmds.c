@@ -11390,14 +11390,14 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 			values[Anum_pg_attribute_attcompression - 1] = ObjectIdGetDatum(newCm);
 			replace[Anum_pg_attribute_attcompression - 1] = true;
 
-			if (OidIsValid(oldCm) && oldCm != nullCm)
+			if (OidIsValid(oldCm))
 				deleteDependencyRecordsForClass(RelationRelationId,
 												RelationGetRelid(rel),
 												attnum,
 												CompressionMethodRelationId,
 												DEPENDENCY_NORMAL);
 
-			if (OidIsValid(newCm) && newCm != nullCm)
+			if (OidIsValid(newCm))
 			{
 				ObjectAddress	myself,
 								referenced;
