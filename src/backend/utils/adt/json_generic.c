@@ -182,7 +182,7 @@ jsonFindKeyInObject(JsonContainer *obj, const JsonValue *key)
 		{
 			tok = JsonIteratorNext(&it, val, true);
 			Assert(tok == WJB_VALUE);
-			/* FIXME free iterator */
+			JsonIteratorFree(it);
 			return val;
 		}
 	}
@@ -207,8 +207,10 @@ jsonFindValueInArray(JsonContainer *array, const JsonValue *elem)
 	{
 		if (tok == WJB_ELEM && val->type == elem->type &&
 			equalsJsonbScalarValue(val, elem))
-			/* FIXME free iterator */
+		{
+			JsonIteratorFree(it);
 			return val;
+		}
 	}
 
 	pfree(val);
@@ -231,8 +233,10 @@ jsonGetArrayElement(JsonContainer *array, uint32 index)
 		if (tok == WJB_ELEM)
 		{
 			if (index-- == 0)
-				/* FIXME free iterator */
+			{
+				JsonIteratorFree(it);
 				return val;
+			}
 		}
 	}
 

@@ -246,6 +246,13 @@ JsonIteratorFreeAndGetParent(JsonIterator *it)
 	return parent;
 }
 
+static inline void
+JsonIteratorFree(JsonIterator *it)
+{
+	while (it)
+		it = JsonIteratorFreeAndGetParent(it);
+}
+
 static inline Json *
 JsonGetNonTemporary(Json *json)
 {
