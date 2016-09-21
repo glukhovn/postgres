@@ -160,6 +160,7 @@ typedef struct AlteredTableInfo
 	/* Information saved by Phases 1/2 for Phase 3: */
 	List	   *constraints;	/* List of NewConstraint */
 	List	   *newvals;		/* List of NewColumnValue */
+	List	   *oldcompressions;	/* List of OldColumnCompression  */
 	bool		new_notnull;	/* T if we added new NOT NULL constraints */
 	int			rewrite;		/* Reason for forced rewrite, if any */
 	Oid			newTableSpace;	/* new tablespace; 0 means no change */
@@ -198,6 +199,14 @@ typedef struct NewColumnValue
 	Expr	   *expr;			/* expression to compute */
 	ExprState  *exprstate;		/* execution state */
 } NewColumnValue;
+
+/* Struct describing one old compression to drop in Phase 3 */
+typedef struct OldColumnCompression
+{
+	Form_pg_attribute			att;
+	CompressionMethodRoutine   *cmr;
+	List					   *options;
+} OldColumnCompression;
 
 /*
  * Error-reporting support for RemoveRelations
@@ -3951,6 +3960,13 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode)
 
 				heap_close(refrel, NoLock);
 			}
+		}
+
+		foreach(lcon, tab->oldcompressions)
+		{
+			OldColumnCompression *c = lfirst(lcon);
+
+			c->cmr->dropAttr(c->att, c->options);
 		}
 
 		if (rel)
@@ -11368,13 +11384,20 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 		{
 			CompressionMethodRoutine *oldCmr =
 					GetCompressionMethodRoutineByCmId(oldCm);
+
 			if (oldCmr->dropAttr)
 			{
-				List *oldOptions = oldOptionsIsNull ? NIL :
+				OldColumnCompression *occ = (OldColumnCompression *)
+													palloc(sizeof(*occ));
+
+				occ->att = memcpy(palloc(sizeof(FormData_pg_attribute)),
+								  atttableform, ATTRIBUTE_FIXED_PART_SIZE);
+				occ->cmr = oldCmr;
+				occ->options = oldOptionsIsNull ? NIL :
 								untransformRelOptions(oldOptionsDatum);
-				oldCmr->dropAttr(atttableform, oldOptions);
+
+				tab->oldcompressions = lappend(tab->oldcompressions, occ);
 			}
-			pfree(oldCmr);
 		}
 
 		if (OidIsValid(newCm) && newCmr->addAttr)
