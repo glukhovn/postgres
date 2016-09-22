@@ -3639,7 +3639,6 @@ jsonb_delete_idx(PG_FUNCTION_ARGS)
 	{
 		idx = res->val.array.nElems + idx;
 		res->val.array.nElems--;
-		/* FIXME free res->val.array.elems[idx] */
 		memmove(&res->val.array.elems[idx],
 				&res->val.array.elems[idx + 1],
 				sizeof(JsonValue) * (res->val.array.nElems - idx));
