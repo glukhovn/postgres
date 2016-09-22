@@ -263,7 +263,7 @@ jsonbcInitContainer(JsonContainerData *jc, JsonbcContainer *jbc, int len,
 	jc->len = len;
 	jc->size = type == JBC_FSCALAR ? 1 : size ? -1 : 0;
 	jc->type = type == JBC_FOBJECT ? jbvObject :
-			   type == JBC_FSCALAR ? jbvArray | jbvScalar : /* FIXME */
+			   type == JBC_FSCALAR ? jbvArray | jbvScalar :
 									 jbvArray;
 }
 
