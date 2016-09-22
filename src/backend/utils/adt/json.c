@@ -2639,7 +2639,7 @@ jsontInit(JsonContainerData *jc, Datum value, CompressionOptions options)
 		case JSON_TOKEN_TRUE:
 		case JSON_TOKEN_FALSE:
 		case JSON_TOKEN_NULL:
-			type = jbvArray | jbvScalar; /* FIXME */
+			type = jbvArray | jbvScalar;
 			size = 1;
 			break;
 		default:

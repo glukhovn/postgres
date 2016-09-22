@@ -278,7 +278,7 @@ jsonvInitContainer(JsonContainerData *jc, const JsonValue *val)
 	jc->type = val->type == jbvBinary ? val->val.binary.data->type :
 			   val->type == jbvObject ? jbvObject :
 			   val->type == jbvArray && !val->val.array.rawScalar ? jbvArray :
-										jbvArray | jbvScalar; /* FIXME */
+										jbvArray | jbvScalar;
 }
 
 JsonContainer *

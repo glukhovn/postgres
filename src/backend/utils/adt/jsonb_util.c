@@ -2117,7 +2117,7 @@ jsonbInitContainer(JsonContainerData *jc, JsonbContainer *jbc, int len)
 	jc->len = len;
 	jc->size = jbc->header & JB_CMASK;
 	jc->type = jbc->header & JB_FOBJECT ? jbvObject :
-			   jbc->header & JB_FSCALAR ? jbvArray | jbvScalar : /* FIXME */
+			   jbc->header & JB_FSCALAR ? jbvArray | jbvScalar :
 										  jbvArray;
 }
 

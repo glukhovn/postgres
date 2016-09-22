@@ -143,9 +143,8 @@ typedef struct Json
 #define JsonbRoot(json)				JsonRoot(json)
 #define JsonbGetSize(json)			JsonGetSize(json)
 
-#define JsonContainerIsArray(c)		(((c)->type & ~jbvScalar) == jbvArray) /* FIXME */
-#define JsonContainerIsScalar(c)	((c)->type == (jbvArray | jbvScalar)) /* FIXME */
-								/*	((c)-type != jbvObject && (c)->type != jbvArray) */
+#define JsonContainerIsArray(c)		(((c)->type & ~jbvScalar) == jbvArray)
+#define JsonContainerIsScalar(c)	((c)->type == (jbvArray | jbvScalar))
 #define JsonContainerIsObject(c)	((c)->type == jbvObject)
 #define JsonContainerSize(c)		((c)->size)
 #define JsonContainerIsEmpty(c)		((c)->size == 0)
