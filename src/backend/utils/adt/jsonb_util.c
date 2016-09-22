@@ -111,12 +111,6 @@ JsonValue *
 JsonValueUnpackBinary(const JsonValue *jbv)
 {
 	JsonbParseState	   *state = NULL;
-#if 0 /* FIXME nested binary values */
-	JsonContainer 	   *jc = jbv->val.binary.data;
-
-	if (jc->ops == &jsonvContainerOps)
-		return jc->data;
-#endif
 
 	return pushJsonbValue(&state, WJB_VALUE, jbv);
 }
@@ -746,7 +740,7 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			appendKey(*pstate, scalarVal);
 			break;
 		case WJB_VALUE:
-			/* Assert(IsAJsonbScalar(scalarVal)); FIXME */
+			/* Assert(IsAJsonbScalar(scalarVal)); */
 			appendValue(*pstate, scalarVal);
 			break;
 		case WJB_ELEM:
