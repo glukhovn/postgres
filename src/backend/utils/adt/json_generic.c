@@ -624,9 +624,9 @@ jsonvGetArraySize(JsonContainer *arrc)
 	{
 		JsonContainer *jsc = arr->val.binary.data;
 		Assert(jsc->type == jbvArray);
-		if (jsc->size >= 0)
-			return jsc->size;
-		return /* FIXME jsc->size = */ (*jsc->ops->getArraySize)(jsc);
+		if (jsc->size < 0)
+			((JsonContainerData *) jsc)->size = (*jsc->ops->getArraySize)(jsc);
+		return jsc->size;
 	}
 
 	Assert(arr->type == jbvArray);
