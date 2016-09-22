@@ -467,34 +467,6 @@ RelationParseRelOptions(Relation relation, HeapTuple tuple)
 	}
 }
 
-static Datum
-GetAttributeCompressionOptions(Oid relid, AttrNumber attnum)
-{
-	HeapTuple	tp;
-	Datum		datum;
-	bool		isnull;
-
-	tp = SearchSysCache2(ATTNUM,
-						 ObjectIdGetDatum(relid),
-						 Int16GetDatum(attnum));
-
-	if (!HeapTupleIsValid(tp))
-		elog(ERROR, "cache lookup failed for attribute %d of relation %u",
-			 attnum, relid);
-
-	datum = SysCacheGetAttr(ATTNUM,
-							tp,
-							Anum_pg_attribute_attcmoptions,
-							&isnull);
-
-	if (!isnull)
-		datum = datumCopy(datum, false, -1);
-
-	ReleaseSysCache(tp);
-
-	return isnull ? PointerGetDatum(NULL) : datum;
-}
-
 /*
  *		RelationBuildTupleDesc
  *
@@ -598,8 +570,8 @@ RelationBuildTupleDesc(Relation relation)
 											sizeof(AttributeCompression));
 
 			cmr = GetCompressionMethodRoutineByCmId(attp->attcompression);
-			optionsDatum = GetAttributeCompressionOptions(
-								RelationGetRelid(relation), attp->attnum);
+			optionsDatum = get_attcmoptions(RelationGetRelid(relation),
+											attp->attnum);
 			optionsList = untransformRelOptions(optionsDatum);
 
 			compression[attp->attnum - 1].routine = cmr;
