@@ -3651,8 +3651,6 @@ AlterTypeDefaultCompression(Oid typeid, ColumnCompression *compression)
 		bool		nulls[Natts_pg_type];
 		bool		replace[Natts_pg_type];
 
-		/* FIXME LockDatabaseObject(TypeRelationId, typeid, 0, ExclusiveLock); */
-
 		typrel = heap_open(TypeRelationId, RowExclusiveLock);
 
 		memset(replace, 0, sizeof(replace));
