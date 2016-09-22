@@ -1626,7 +1626,30 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 	{
 		/* Dropping user attributes is lots harder */
 		if (OidIsValid(attStruct->attcompression))
+		{
+			bool isnull;
+
 			DropAttributeCompression(tuple);
+
+			SysCacheGetAttr(ATTNUM, tuple, Anum_pg_attribute_attcmoptions, &isnull);
+
+			if (!isnull)
+			{
+				Datum	values[Natts_pg_attribute];
+				bool	nulls[Natts_pg_attribute];
+				bool	replace[Natts_pg_attribute];
+
+				memset(values, 0, sizeof(values));
+				memset(nulls, false, sizeof(nulls));
+				memset(replace, false, sizeof(replace));
+
+				nulls[Anum_pg_attribute_attcmoptions - 1] = true;
+				replace[Anum_pg_attribute_attcmoptions - 1] = true;
+
+				tuple = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
+										  values, nulls, replace);
+			}
+		}
 
 		/* Mark the attribute as dropped */
 		attStruct->attisdropped = true;
@@ -1648,7 +1671,7 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 		/* We don't want to keep stats for it anymore */
 		attStruct->attstattarget = 0;
 
-		attStruct->attcompression = InvalidOid; /* FIXME clear attcmoptions */
+		attStruct->attcompression = InvalidOid;
 
 		/*
 		 * Change the column name to something that isn't likely to conflict
