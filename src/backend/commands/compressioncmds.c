@@ -63,8 +63,7 @@ LookupCompressionHandlerFunc(List *handlerName)
 }
 
 static ObjectAddress
-CreateCompressionMethod(char *cmName, Oid cmNamespace, Oid collOwner,
-						List *handlerName, List *targetTypeName)
+CreateCompressionMethod(char *cmName, List *handlerName, List *targetTypeName)
 {
 	Relation	rel;
 	ObjectAddress myself;
@@ -137,30 +136,22 @@ ObjectAddress
 DefineCompressionMethod(List *names, List *parameters)
 {
 	char	   *cmName;
-	Oid			cmNamespace;
 	ListCell   *pl;
 	DefElem    *handlerEl = NULL;
 	DefElem	   *targetTypeNameEl = NULL;
 
-	cmNamespace = QualifiedNameGetCreationNamespace(names, &cmName);
+	if (list_length(names) != 1)
+		elog(ERROR, "compression method name cannot be qualified");
 
-#if 1 /* FIXME */
+	cmName = strVal(linitial(names));
+
 	/* Must be super user */
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to create access method \"%s\"",
+				 errmsg("permission denied to create compression method \"%s\"",
 						cmName),
-				 errhint("Must be superuser to create an access method.")));
-#else
-	{
-		AclResult	aclresult;
-		aclresult = pg_namespace_aclcheck(cmNamespace, GetUserId(), ACL_CREATE);
-	if (aclresult != ACLCHECK_OK)
-		aclcheck_error(aclresult, ACL_KIND_NAMESPACE,
-					   get_namespace_name(cmNamespace));
-	}
-#endif
+				 errhint("Must be superuser to create an compression method.")));
 
 	foreach(pl, parameters)
 	{
@@ -193,8 +184,7 @@ DefineCompressionMethod(List *names, List *parameters)
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("target type for compression method is not specified")));
 
-	return CreateCompressionMethod(cmName, cmNamespace, GetUserId(),
-								   (List *) handlerEl->arg,
+	return CreateCompressionMethod(cmName, (List *) handlerEl->arg,
 								   (List *) targetTypeNameEl->arg);
 }
 
@@ -204,12 +194,10 @@ RemoveCompressionMethodById(Oid cmOid)
 	Relation	relation;
 	HeapTuple	tup;
 
-#if 1 /* FIXME */
 	if (!superuser())
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("must be superuser to drop compression methods")));
-#endif
 
 	relation = heap_open(CompressionMethodRelationId, RowExclusiveLock);
 

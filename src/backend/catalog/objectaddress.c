@@ -152,7 +152,7 @@ static const ObjectPropertyType ObjectProperty[] =
 		COMPRESSIONMETHODOID,
 		COMPRESSIONMETHODNAME,
 		Anum_pg_compression_cmname,
-		InvalidAttrNumber, /* FIXME namespace, owner, acl */
+		InvalidAttrNumber,
 		InvalidAttrNumber,
 		InvalidAttrNumber,
 		-1,
@@ -829,7 +829,7 @@ get_object_address(ObjectType objtype, List *objname, List *objargs,
 			case OBJECT_FOREIGN_SERVER:
 			case OBJECT_EVENT_TRIGGER:
 			case OBJECT_ACCESS_METHOD:
-			case OBJECT_COMPRESSION_METHOD: /* FIXME */
+			case OBJECT_COMPRESSION_METHOD:
 				address = get_object_address_unqualified(objtype,
 														 objname, missing_ok);
 				break;
@@ -1109,7 +1109,7 @@ get_object_address_unqualified(ObjectType objtype,
 			case OBJECT_EVENT_TRIGGER:
 				msg = gettext_noop("event trigger name cannot be qualified");
 				break;
-			case OBJECT_COMPRESSION_METHOD: /* FIXME */
+			case OBJECT_COMPRESSION_METHOD:
 				msg = gettext_noop("compression method name cannot be qualified");
 				break;
 			default:
@@ -2144,13 +2144,6 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_COLLATION,
 							   NameListToString(objname));
 			break;
-#if 0 /* FIXME */
-		case OBJECT_COMPRESSION_METHOD:
-			if (!pg_compression_method_ownercheck(address.objectId, roleid))
-				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_COMPRESSION_METHOD,
-							   NameListToString(objname));
-			break;
-#endif
 		case OBJECT_CONVERSION:
 			if (!pg_conversion_ownercheck(address.objectId, roleid))
 				aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CONVERSION,
@@ -2264,7 +2257,7 @@ check_object_ownership(Oid roleid, ObjectType objtype, ObjectAddress address,
 		case OBJECT_TSPARSER:
 		case OBJECT_TSTEMPLATE:
 		case OBJECT_ACCESS_METHOD:
-		case OBJECT_COMPRESSION_METHOD: /* FIXME */
+		case OBJECT_COMPRESSION_METHOD:
 			/* We treat these object types as being owned by superusers */
 			if (!superuser_arg(roleid))
 				ereport(ERROR,

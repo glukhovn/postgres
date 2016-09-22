@@ -285,7 +285,7 @@ does_not_exist_skipping(ObjectType objtype, List *objname, List *objargs)
 				name = NameListToString(objname);
 			}
 			break;
-		case OBJECT_COMPRESSION_METHOD: /* FIXME schema */
+		case OBJECT_COMPRESSION_METHOD:
 			msg = gettext_noop("compression method \"%s\" does not exist, skipping");
 			name = NameListToString(objname);
 			break;
