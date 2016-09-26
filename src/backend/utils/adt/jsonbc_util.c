@@ -681,7 +681,6 @@ jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
 							(JsonbcContainer *)(base + offset),
 							JBE_LENGTH(entry),
 							dictId);
-		result->val.binary.len = result->val.binary.data->len;
 		result->val.binary.uniquified = true;
 	}
 }

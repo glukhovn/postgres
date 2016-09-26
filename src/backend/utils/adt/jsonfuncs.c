@@ -2439,7 +2439,8 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 				else if (v->type == jbvObject || v->type == jbvArray)
 					s = JsonbToCString(NULL, JsonValueToContainer(v), 0);
 				else if (v->type == jbvBinary)
-					s = JsonbToCString(NULL, (JsonbContainer *) v->val.binary.data, v->val.binary.len);
+					s = JsonbToCString(NULL, v->val.binary.data,
+									   v->val.binary.data->len);
 				else
 					elog(ERROR, "unrecognized jsonb type: %d", (int) v->type);
 			}
@@ -2740,7 +2741,8 @@ make_row_from_rec_and_jsonb(Jsonb *element, PopulateRecordsetState *state)
 			else if (v->type == jbvObject || v->type == jbvArray)
 				s = JsonbToCString(NULL, JsonValueToContainer(v), 0);
 			else if (v->type == jbvBinary)
-				s = JsonbToCString(NULL, (JsonbContainer *) v->val.binary.data, v->val.binary.len);
+				s = JsonbToCString(NULL, v->val.binary.data,
+								   v->val.binary.data->len);
 			else
 				elog(ERROR, "unrecognized jsonb type: %d", (int) v->type);
 
