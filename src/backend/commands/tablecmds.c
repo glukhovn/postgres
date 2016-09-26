@@ -469,7 +469,7 @@ static void RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid,
  */
 ObjectAddress
 DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
-			   ObjectAddress *typaddress)
+			   ObjectAddress *typaddress, Node **pAlterStmt)
 {
 	char		relname[NAMEDATALEN];
 	Oid			namespaceId;
@@ -490,6 +490,7 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
 	Oid			ofTypeId;
 	ObjectAddress address;
+	AlterTableStmt *alterStmt = NULL;
 
 	/*
 	 * Truncate relname to appropriate length (probably a waste of time, as
@@ -664,6 +665,8 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			cookedDefaults = lappend(cookedDefaults, cooked);
 			descriptor->attrs[attnum - 1]->atthasdef = true;
 		}
+
+		transformColumnCompression(colDef, stmt->relation, &alterStmt);
 	}
 
 	/*
@@ -731,6 +734,11 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * visible to anyone else anyway, until commit).
 	 */
 	relation_close(rel, NoLock);
+
+	if (pAlterStmt)
+		*pAlterStmt = (Node *) alterStmt;
+	else
+		Assert(!alterStmt);
 
 	return address;
 }
@@ -1364,6 +1372,45 @@ storage_name(char c)
 	}
 }
 
+static ColumnCompression *
+GetColumnCompressionForAttribute(Form_pg_attribute att)
+{
+	ColumnCompression *compression = makeNode(ColumnCompression);
+
+	compression->methodName = NULL;
+	compression->methodOid = att->attcompression;
+	compression->options = untransformRelOptions(
+								get_attcmoptions(att->attrelid, att->attnum));
+
+	return compression;
+}
+
+static void
+CheckCompressionMismatch(ColumnCompression *c1, ColumnCompression *c2,
+						 const char *attributeName)
+{
+	char *cmname1 = c1->methodName ? c1->methodName :
+					GetCompressionMethodName(c1->methodOid);
+	char *cmname2 = c2->methodName ? c2->methodName :
+					GetCompressionMethodName(c2->methodOid);
+
+	if (strcmp(cmname1, cmname2))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("column \"%s\" has a compression method conflict",
+						attributeName),
+				 errdetail("%s versus %s", cmname1, cmname2)));
+
+	if (!equal(c1->options, c2->options))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATATYPE_MISMATCH),
+				 errmsg("column \"%s\" has a compression options conflict",
+						attributeName),
+				 errdetail("(%s) versus (%s)",
+						   formatRelOptions(c1->options),
+						   formatRelOptions(c2->options))));
+}
+
 /*----------
  * MergeAttributes
  *		Returns new schema given initial schema and superclasses.
@@ -1655,6 +1702,19 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 									   storage_name(def->storage),
 									   storage_name(attribute->attstorage))));
 
+				if (OidIsValid(attribute->attcompression))
+				{
+					ColumnCompression *attcompression =
+							GetColumnCompressionForAttribute(attribute);
+
+					if (!def->compression)
+						def->compression = attcompression;
+					else
+						CheckCompressionMismatch(def->compression,
+												 attcompression,
+												 attributeName);
+				}
+
 				def->inhcount++;
 				/* Merge of NOT NULL constraints = OR 'em together */
 				def->is_not_null |= attribute->attnotnull;
@@ -1681,6 +1741,9 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 				def->collOid = attribute->attcollation;
 				def->constraints = NIL;
 				def->location = -1;
+				if (OidIsValid(attribute->attcompression))
+					def->compression =
+							GetColumnCompressionForAttribute(attribute);
 				inhSchema = lappend(inhSchema, def);
 				newattno[parent_attno - 1] = ++child_attno;
 			}
@@ -1877,7 +1940,12 @@ MergeAttributes(List *schema, List *supers, char relpersistence,
 									   storage_name(def->storage),
 									   storage_name(newdef->storage))));
 
-				/* FIXME check compression mismatch */
+				if (!def->compression)
+					def->compression = newdef->compression;
+				else if (newdef->compression)
+					CheckCompressionMismatch(def->compression,
+											 newdef->compression,
+											 attributeName);
 
 				/* Mark the column as locally defined */
 				def->is_local = true;
@@ -4752,6 +4820,41 @@ ATPrepAddColumn(List **wqueue, Relation rel, bool recurse, bool recursing,
 		cmd->subtype = AT_AddColumnRecurse;
 }
 
+void
+GetAttributeCompression(ColumnCompression *compression,
+						Form_pg_attribute att,
+						Oid *cmid,
+						CompressionMethodRoutine **cmr,
+						List **optionsList,
+						Datum *optionsDatum)
+{
+	if (compression &&
+		(compression->methodName || OidIsValid(compression->methodOid)))
+	{
+		*cmid = compression->methodName
+					? GetCompressionMethodOid(compression->methodName,
+											  att->atttypid, false)
+					: compression->methodOid;
+		*optionsList = compression->options;
+	}
+	else
+	{
+		*cmid = get_base_typnullcm(att->atttypid);
+		*optionsList = NIL;
+	}
+
+	*cmr = OidIsValid(*cmid) ? GetCompressionMethodRoutineByCmId(*cmid) : NULL;
+
+	if (*cmr && (*cmr)->options && (*cmr)->options->validate)
+		*optionsList = (*cmr)->options->validate(att, *optionsList);
+	else if (*optionsList != NIL)
+		elog(ERROR, "%s compression method has no options",
+			 compression->methodName ? compression->methodName :
+			 GetCompressionMethodName(*cmid));
+
+	*optionsDatum = optionListToArray(*optionsList);
+}
+
 /*
  * Add a column to a table; this handles the AT_AddOids cases as well.  The
  * return value is the address of the new column in the parent relation.
@@ -4779,6 +4882,9 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	ListCell   *child;
 	AclResult	aclresult;
 	ObjectAddress address;
+	CompressionMethodRoutine *cmroutine;
+	List	   *cmoptionsList;
+	Datum		cmoptionsDatum;
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
@@ -4822,6 +4928,24 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 						 errdetail("\"%s\" versus \"%s\"",
 								   get_collation_name(ccollid),
 							   get_collation_name(childatt->attcollation))));
+
+			if (colDef->compression)
+			{
+				if (OidIsValid(childatt->attcompression))
+				{
+					ColumnCompression *childAttCompression =
+							GetColumnCompressionForAttribute(childatt);
+
+					CheckCompressionMismatch(childAttCompression,
+											 colDef->compression,
+											 colDef->colname);
+				}
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_DATATYPE_MISMATCH),
+							 errmsg("child table \"%s\" has not compressed column \"%s\"",
+							   RelationGetRelationName(rel), colDef->colname)));
+			}
 
 			/* If it's OID, child column must actually be OID */
 			if (isOid && childatt->attnum != ObjectIdAttributeNumber)
@@ -4910,12 +5034,16 @@ ATExecAddColumn(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	attribute.attislocal = colDef->is_local;
 	attribute.attinhcount = colDef->inhcount;
 	attribute.attcollation = collOid;
-	attribute.attcompression = get_base_typnullcm(typeOid);
+
+	/* colDef->compression is handled in subsequent ALTER TABLE statement */
+	GetAttributeCompression(NULL, &attribute, &attribute.attcompression,
+							&cmroutine, &cmoptionsList, &cmoptionsDatum);
+
 	/* attribute.attacl is handled by InsertPgAttributeTuple */
 
 	ReleaseSysCache(typeTuple);
 
-	InsertPgAttributeTuple(attrdesc, &attribute, NULL, PointerGetDatum(NULL));
+	InsertPgAttributeTuple(attrdesc, &attribute, NULL, cmoptionsDatum);
 
 	heap_close(attrdesc, RowExclusiveLock);
 
@@ -11312,7 +11440,6 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 	bool				newOptionsIsNull;
 	Oid					newCm;
 	Oid					oldCm;
-	Oid					nullCm;
 	CompressionMethodRoutine *newCmr;
 
 	attrel = heap_open(AttributeRelationId, RowExclusiveLock);
@@ -11331,36 +11458,10 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot alter system column \"%s\"", column)));
 
-	nullCm = get_base_typnullcm(atttableform->atttypid);
+	GetAttributeCompression(compression, atttableform,
+							&newCm, &newCmr, &newOptions, &newOptionsDatum);
 
-	if (compression &&
-		(compression->methodName || OidIsValid(compression->methodOid)))
-	{
-		newCm = compression->methodName
-					? GetCompressionMethodOid(compression->methodName,
-											  atttableform->atttypid, false)
-					: compression->methodOid;
-		newCmr = GetCompressionMethodRoutineByCmId(newCm);
-		newOptions = compression->options;
-
-		if (newCmr->options && newCmr->options->validate)
-			newOptions = newCmr->options->validate(atttableform, newOptions);
-		else if (newOptions != NIL)
-			elog(ERROR, "%s compression method has no options",
-				 compression->methodName);
-
-		newOptionsIsNull = newOptions == NIL;
-		newOptionsDatum = optionListToArray(newOptions);
-	}
-	else
-	{
-		newCm = nullCm;
-		newCmr = OidIsValid(newCm) ? GetCompressionMethodRoutineByCmId(newCm)
-								   : NULL;
-		newOptions = NULL;
-		newOptionsIsNull = true;
-		newOptionsDatum = PointerGetDatum(NULL);
-	}
+	newOptionsIsNull = newOptions == NIL;
 
 	/* Extract the current options */
 	oldOptionsDatum = SysCacheGetAttr(ATTNAME,

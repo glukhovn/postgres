@@ -25,5 +25,6 @@ extern IndexStmt *transformIndexStmt(Oid relid, IndexStmt *stmt,
 extern void transformRuleStmt(RuleStmt *stmt, const char *queryString,
 				  List **actions, Node **whereClause);
 extern List *transformCreateSchemaStmt(CreateSchemaStmt *stmt);
-
+extern void transformColumnCompression(ColumnDef *column, RangeVar *relation,
+									   AlterTableStmt **alterStmt);
 #endif   /* PARSE_UTILCMD_H */

@@ -342,6 +342,49 @@ transformCreateStmt(CreateStmt *stmt, const char *queryString)
 	return result;
 }
 
+void
+transformColumnCompression(ColumnDef *column, RangeVar *relation,
+						   AlterTableStmt **alterStmt)
+{
+	if (!column->compression && column->typeName)
+	{
+		Type	tup = typenameType(NULL, column->typeName, NULL);
+		Oid		cmoid = get_base_typdefaultcm(tup);
+
+		ReleaseSysCache(tup);
+
+		if (OidIsValid(cmoid))
+		{
+			column->compression = makeNode(ColumnCompression);
+			column->compression->methodName = NULL;
+			column->compression->methodOid = cmoid;
+			column->compression->options = NIL;
+		}
+	}
+
+	if (column->compression)
+	{
+		AlterTableCmd *cmd;
+
+		cmd = makeNode(AlterTableCmd);
+		cmd->subtype = AT_AlterColumnCompression;
+		cmd->name = column->colname;
+		cmd->def = (Node *) column->compression;
+		cmd->behavior = DROP_RESTRICT;
+		cmd->missing_ok = false;
+
+		if (!*alterStmt)
+		{
+			*alterStmt = makeNode(AlterTableStmt);
+			(*alterStmt)->relation = relation;
+			(*alterStmt)->relkind = OBJECT_TABLE;
+			(*alterStmt)->cmds = NIL;
+		}
+
+		(*alterStmt)->cmds = lappend((*alterStmt)->cmds, cmd);
+	}
+}
+
 /*
  * transformColumnDefinition -
  *		transform a single ColumnDef within CREATE TABLE
@@ -656,40 +699,14 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 		cxt->alist = lappend(cxt->alist, stmt);
 	}
 
-	if (!column->compression && column->typeName)
+	if (cxt->isalter)
 	{
-		Type	tup = typenameType(cxt->pstate, column->typeName, NULL);
-		Oid		cmoid = get_base_typdefaultcm(tup);
+		AlterTableStmt *stmt = NULL;
 
-		ReleaseSysCache(tup);
+		transformColumnCompression(column, cxt->relation, &stmt);
 
-		if (OidIsValid(cmoid))
-		{
-			column->compression = makeNode(ColumnCompression);
-			column->compression->methodName = NULL;
-			column->compression->methodOid = cmoid;
-			column->compression->options = NIL;
-		}
-	}
-
-	if (column->compression != NULL)
-	{
-		AlterTableStmt *stmt;
-		AlterTableCmd *cmd;
-
-		cmd = makeNode(AlterTableCmd);
-		cmd->subtype = AT_AlterColumnCompression;
-		cmd->name = column->colname;
-		cmd->def = (Node *) column->compression;
-		cmd->behavior = DROP_RESTRICT;
-		cmd->missing_ok = false;
-
-		stmt = makeNode(AlterTableStmt);
-		stmt->relation = cxt->relation;
-		stmt->relkind = OBJECT_TABLE;
-		stmt->cmds = list_make1(cmd);
-
-		cxt->alist = lappend(cxt->alist, stmt);
+		if (stmt)
+			cxt->alist = lappend(cxt->alist, stmt);
 	}
 }
 

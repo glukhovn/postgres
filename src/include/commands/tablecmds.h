@@ -23,7 +23,7 @@
 
 
 extern ObjectAddress DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
-			   ObjectAddress *typaddress);
+			   ObjectAddress *typaddress, Node **pAlterStmt);
 
 extern void RemoveRelations(DropStmt *drop);
 
@@ -87,4 +87,12 @@ extern void RangeVarCallbackOwnsTable(const RangeVar *relation,
 
 extern void RangeVarCallbackOwnsRelation(const RangeVar *relation,
 							 Oid relId, Oid oldRelId, void *noCatalogs);
+
+extern void GetAttributeCompression(struct ColumnCompression *compression,
+									Form_pg_attribute att,
+									Oid *cmid,
+									struct CompressionMethodRoutine **cmr,
+									List **optionsList,
+									Datum *optionsDatum);
+
 #endif   /* TABLECMDS_H */

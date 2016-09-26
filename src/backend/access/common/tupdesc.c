@@ -23,6 +23,7 @@
 #include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "parser/parse_type.h"
 #include "utils/acl.h"
@@ -665,6 +666,27 @@ TupleDescInitEntryCollation(TupleDesc desc,
 	desc->attrs[attributeNumber - 1]->attcollation = collationid;
 }
 
+void
+TupleDescInitAttrCompression(TupleDesc desc,
+							 AttrNumber attnum,
+							 CompressionMethodRoutine *cmr,
+							 List *optionsList,
+							 Datum optionsDatum)
+{
+	AttributeCompression *ac;
+
+	if (!desc->tdcompression)
+		desc->tdcompression = (AttributeCompression *)
+				palloc0(desc->natts * sizeof(AttributeCompression));
+
+	ac = &desc->tdcompression[attnum - 1];
+
+	ac->routine = cmr;
+	ac->optionsDatum = optionsDatum;
+	ac->options = cmr->options && cmr->options->convert ?
+				  cmr->options->convert(desc->attrs[attnum - 1], optionsList) :
+				  optionsList;
+}
 
 /*
  * BuildDescForRelation
@@ -700,8 +722,11 @@ BuildDescForRelation(List *schema)
 
 	foreach(l, schema)
 	{
-		ColumnDef  *entry = lfirst(l);
-		AclResult	aclresult;
+		ColumnDef				   *entry = lfirst(l);
+		AclResult					aclresult;
+		CompressionMethodRoutine   *cmroutine;
+		List					   *cmoptionsList;
+		Datum						cmoptionsDatum;
 
 		/*
 		 * for each entry in the list, get the name and type information from
@@ -739,16 +764,16 @@ BuildDescForRelation(List *schema)
 		has_not_null |= entry->is_not_null;
 		desc->attrs[attnum - 1]->attislocal = entry->is_local;
 		desc->attrs[attnum - 1]->attinhcount = entry->inhcount;
-		desc->attrs[attnum - 1]->attcompression = get_base_typnullcm(atttypid);
+
+		/* entry->compression is handled in subsequent ALTER TABLE statement */
+		GetAttributeCompression(NULL,
+								desc->attrs[attnum - 1],
+								&desc->attrs[attnum - 1]->attcompression,
+								&cmroutine, &cmoptionsList, &cmoptionsDatum);
+
 		if (OidIsValid(desc->attrs[attnum - 1]->attcompression))
-		{
-			if (!desc->tdcompression)
-				desc->tdcompression =
-						palloc0(sizeof(desc->tdcompression[0]) * natts);
-			desc->tdcompression[attnum - 1].routine =
-					GetCompressionMethodRoutineByCmId(
-							desc->attrs[attnum - 1]->attcompression);
-		}
+			TupleDescInitAttrCompression(desc, attnum, cmroutine,
+										 cmoptionsList, cmoptionsDatum);
 	}
 
 	if (has_not_null)

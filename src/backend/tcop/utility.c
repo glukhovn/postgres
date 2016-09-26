@@ -971,6 +971,7 @@ ProcessUtilitySlow(Node *parsetree,
 					foreach(l, stmts)
 					{
 						Node	   *stmt = (Node *) lfirst(l);
+						Node	   *alterStmt = NULL;
 
 						if (IsA(stmt, CreateStmt))
 						{
@@ -980,7 +981,9 @@ ProcessUtilitySlow(Node *parsetree,
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,
 													 RELKIND_RELATION,
-													 InvalidOid, NULL);
+													 InvalidOid, NULL,
+													 &alterStmt);
+
 							EventTriggerCollectSimpleCommand(address,
 															 secondaryObject,
 															 stmt);
@@ -1013,7 +1016,8 @@ ProcessUtilitySlow(Node *parsetree,
 							/* Create the table itself */
 							address = DefineRelation((CreateStmt *) stmt,
 													 RELKIND_FOREIGN_TABLE,
-													 InvalidOid, NULL);
+													 InvalidOid, NULL,
+													 &alterStmt);
 							CreateForeignTable((CreateForeignTableStmt *) stmt,
 											   address.objectId);
 							EventTriggerCollectSimpleCommand(address,
@@ -1034,6 +1038,9 @@ ProcessUtilitySlow(Node *parsetree,
 										   None_Receiver,
 										   NULL);
 						}
+
+						if (alterStmt)
+							lappend(stmts, alterStmt);
 
 						/* Need CCI between commands */
 						if (lnext(l) != NULL)

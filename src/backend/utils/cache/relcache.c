@@ -484,7 +484,6 @@ RelationBuildTupleDesc(Relation relation)
 	TupleConstr *constr;
 	AttrDefault *attrdef = NULL;
 	int			ndef = 0;
-	AttributeCompression *compression = NULL;
 
 	/* copy some fields from pg_class row to rd_att */
 	relation->rd_att->tdtypeid = relation->rd_rel->reltype;
@@ -564,21 +563,13 @@ RelationBuildTupleDesc(Relation relation)
 			List		   *optionsList;
 			CompressionMethodRoutine *cmr;
 
-			if (!compression)
-				compression = (AttributeCompression *)
-									palloc0(relation->rd_rel->relnatts *
-											sizeof(AttributeCompression));
-
 			cmr = GetCompressionMethodRoutineByCmId(attp->attcompression);
 			optionsDatum = get_attcmoptions(RelationGetRelid(relation),
 											attp->attnum);
 			optionsList = untransformRelOptions(optionsDatum);
 
-			compression[attp->attnum - 1].routine = cmr;
-			compression[attp->attnum - 1].optionsDatum = optionsDatum;
-			compression[attp->attnum - 1].options =
-					cmr->options && cmr->options->convert ?
-					cmr->options->convert(attp, optionsList) : optionsList;
+			TupleDescInitAttrCompression(relation->rd_att, attp->attnum,
+										 cmr, optionsList, optionsDatum);
 
 			MemoryContextSwitchTo(oldctx);
 		}
@@ -656,8 +647,6 @@ RelationBuildTupleDesc(Relation relation)
 		pfree(constr);
 		relation->rd_att->constr = NULL;
 	}
-
-	relation->rd_att->tdcompression = compression;
 }
 
 /*

@@ -132,6 +132,12 @@ extern void TupleDescInitEntryCollation(TupleDesc desc,
 							AttrNumber attributeNumber,
 							Oid collationid);
 
+extern void TupleDescInitAttrCompression(TupleDesc desc,
+										 AttrNumber attnum,
+										 struct CompressionMethodRoutine *cmr,
+										 List *optionsList,
+										 Datum optionsDatum);
+
 extern TupleDesc BuildDescForRelation(List *schema);
 
 extern TupleDesc BuildDescFromLists(List *names, List *types, List *typmods, List *collations);
