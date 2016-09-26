@@ -699,8 +699,9 @@ static Size
 jsonGetExtendedSize(JsonContainer *jc)
 {
 	return VARHDRSZ_EXTERNAL + offsetof(varatt_extended_json, data) +
-			jc->len + (jc->ops->compressionOps ?
-						jc->ops->compressionOps->encodeOptions(jc, NULL) : 0);
+			VARHDRSZ + jc->len +
+			(jc->ops->compressionOps ?
+			 jc->ops->compressionOps->encodeOptions(jc, NULL) : 0);
 }
 
 #define JsonContainerGetType(jc) \
@@ -734,7 +735,8 @@ jsonWriteExtended(JsonContainer *jc, void *ptr, Size allocated_size)
 	optionsSize = jc->ops->compressionOps ?
 				  jc->ops->compressionOps->encodeOptions(jc, &pextjs->data) : 0;
 
-	memcpy(&pextjs->data[optionsSize], jc->data, jc->len);
+	SET_VARSIZE(&pextjs->data[optionsSize], VARHDRSZ + jc->len);
+	memcpy(VARDATA(&pextjs->data[optionsSize]), jc->data, jc->len);
 }
 
 static void
@@ -744,7 +746,8 @@ JsonInitExtended(Json *json)
 	varatt_extended_json   *pextjs,
 							extjs;
 	void				   *ptr = DatumGetPointer(json->obj.value);
-	int						len;
+	Size					totalSize;
+	Size					optionsSize;
 
 	Assert(VARATT_IS_EXTERNAL_EXTENDED(ptr));
 
@@ -754,33 +757,20 @@ JsonInitExtended(Json *json)
 	jc->ops = JsonContainerGetOpsByType(extjs.type);
 	Assert(jc->ops);
 
-	len = extjs.vaext.size - offsetof(varatt_extended_json, data);
+	totalSize = extjs.vaext.size - offsetof(varatt_extended_json, data);
 
-#if 1
-	{
-		/* FIXME save value with varlena header */
-		Size	optionsSize =
-				jc->ops->compressionOps ?
-				jc->ops->compressionOps->decodeOptions(&pextjs->data,
-													   &json->obj.options) : 0;
-		void   *p = palloc(VARHDRSZ + len);
-
-		SET_VARSIZE(p, VARHDRSZ + len);
-		memcpy(VARDATA(p), &pextjs->data[optionsSize], len);
-		if (json->obj.freeValue)
-			pfree(DatumGetPointer(json->obj.value));
-		json->obj.value = PointerGetDatum(p);
-		json->obj.freeValue = true;
-	}
-#else
-	jc->len = len;
-#if 0 /* FIXME alignment */
-	jc->data = &pextjs->data;
-#else
-	jc->data = palloc(jc->len);
-	memcpy(jc->data, &pextjs->data, jc->len);
-#endif
-#endif
+	optionsSize = !jc->ops->compressionOps ? 0 :
+				   jc->ops->compressionOps->decodeOptions(&pextjs->data,
+														  &json->obj.options);
+	if (json->obj.freeValue)
+		pfree(DatumGetPointer(json->obj.value));
+	/* FIXME alignment
+	 * json->obj.value = PointerGetDatum(&pextjs->data[optionsSize]);
+	 */
+	json->obj.value = PointerGetDatum(memcpy(palloc(totalSize - optionsSize),
+											 &pextjs->data[optionsSize],
+											 totalSize - optionsSize));
+	json->obj.freeValue = true;
 }
 
 static void
