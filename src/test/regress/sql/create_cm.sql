@@ -247,3 +247,25 @@ DROP TABLE json_domain_test1;
 CREATE TEMP TABLE json_domain_test2(js json_not_null compressed jsonb);
 SELECT attcompression FROM pg_attribute WHERE attrelid = 'json_domain_test2'::regclass AND attnum = 1;
 DROP TABLE json_domain_test2;
+
+
+-- Test compression inheritance
+create temp table json_parent1(js json);
+create temp table json_parent2(js json compressed jsonb);
+create temp table json_parent3(js json compressed jsonb);
+
+create temp table json_child1(js json) inherits (json_parent1);
+create temp table json_child2(js json) inherits (json_parent2);
+create temp table json_child3(js json compressed jsonb) inherits (json_parent1);
+create temp table json_child4(js json compressed jsonb) inherits (json_parent2);
+create temp table json_child5(js json) inherits (json_parent1, json_parent2);
+create temp table json_child6(js json) inherits (json_parent2, json_parent3);
+create temp table json_child7(js json compressed jsonb) inherits (json_parent2, json_parent3);
+
+SELECT a.attrelid::regclass, a.attnum, c.cmname
+FROM pg_attribute a JOIN pg_compression c ON a.attcompression = c.oid
+WHERE a.attrelid::regclass::text LIKE 'json_child%' AND a.attnum = 1;
+
+drop table json_parent1 cascade;
+drop table json_parent2 cascade;
+drop table json_parent3 cascade;

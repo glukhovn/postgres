@@ -666,3 +666,48 @@ SELECT attcompression FROM pg_attribute WHERE attrelid = 'json_domain_test2'::re
 (1 row)
 
 DROP TABLE json_domain_test2;
+-- Test compression inheritance
+create temp table json_parent1(js json);
+create temp table json_parent2(js json compressed jsonb);
+create temp table json_parent3(js json compressed jsonb);
+create temp table json_child1(js json) inherits (json_parent1);
+NOTICE:  merging column "js" with inherited definition
+create temp table json_child2(js json) inherits (json_parent2);
+NOTICE:  merging column "js" with inherited definition
+create temp table json_child3(js json compressed jsonb) inherits (json_parent1);
+NOTICE:  merging column "js" with inherited definition
+ERROR:  column "js" has a compression method conflict
+DETAIL:  json_null versus jsonb
+create temp table json_child4(js json compressed jsonb) inherits (json_parent2);
+NOTICE:  merging column "js" with inherited definition
+create temp table json_child5(js json) inherits (json_parent1, json_parent2);
+NOTICE:  merging multiple inherited definitions of column "js"
+ERROR:  column "js" has a compression method conflict
+DETAIL:  json_null versus jsonb
+create temp table json_child6(js json) inherits (json_parent2, json_parent3);
+NOTICE:  merging multiple inherited definitions of column "js"
+NOTICE:  merging column "js" with inherited definition
+create temp table json_child7(js json compressed jsonb) inherits (json_parent2, json_parent3);
+NOTICE:  merging multiple inherited definitions of column "js"
+NOTICE:  merging column "js" with inherited definition
+SELECT a.attrelid::regclass, a.attnum, c.cmname
+FROM pg_attribute a JOIN pg_compression c ON a.attcompression = c.oid
+WHERE a.attrelid::regclass::text LIKE 'json_child%' AND a.attnum = 1;
+  attrelid   | attnum |  cmname   
+-------------+--------+-----------
+ json_child1 |      1 | json_null
+ json_child2 |      1 | jsonb
+ json_child4 |      1 | jsonb
+ json_child6 |      1 | jsonb
+ json_child7 |      1 | jsonb
+(5 rows)
+
+drop table json_parent1 cascade;
+NOTICE:  drop cascades to table json_child1
+drop table json_parent2 cascade;
+NOTICE:  drop cascades to 4 other objects
+DETAIL:  drop cascades to table json_child2
+drop cascades to table json_child4
+drop cascades to table json_child6
+drop cascades to table json_child7
+drop table json_parent3 cascade;
