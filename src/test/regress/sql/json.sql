@@ -705,8 +705,8 @@ DROP INDEX jidx_array;
 CREATE INDEX jidx ON testjson USING btree (j);
 SET enable_seqscan = off;
 
-SELECT count(*) FROM testjson WHERE j > '{"p":1}';
-SELECT count(*) FROM testjson WHERE j = '{"pos":98, "line":371, "node":"CBA", "indexed":true}';
+SELECT count(*) FROM testjson WHERE j > '{"p": 1}';
+SELECT count(*) FROM testjson WHERE j = '{"indexed": true, "line": 371, "pos": 98, "node": "CBA"}';
 
 --gin path opclass
 DROP INDEX jidx;

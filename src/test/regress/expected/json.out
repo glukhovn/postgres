@@ -2365,13 +2365,13 @@ DROP INDEX jidx_array;
 -- btree
 CREATE INDEX jidx ON testjson USING btree (j);
 SET enable_seqscan = off;
-SELECT count(*) FROM testjson WHERE j > '{"p":1}';
+SELECT count(*) FROM testjson WHERE j > '{"p": 1}';
  count 
 -------
-   884
+   516
 (1 row)
 
-SELECT count(*) FROM testjson WHERE j = '{"pos":98, "line":371, "node":"CBA", "indexed":true}';
+SELECT count(*) FROM testjson WHERE j = '{"indexed": true, "line": 371, "pos": 98, "node": "CBA"}';
  count 
 -------
      1
