@@ -1648,6 +1648,8 @@ RemoveAttributeById(Oid relid, AttrNumber attnum)
 
 				tuple = heap_modify_tuple(tuple, RelationGetDescr(attr_rel),
 										  values, nulls, replace);
+
+				attStruct = (Form_pg_attribute) GETSTRUCT(tuple);
 			}
 		}
 
