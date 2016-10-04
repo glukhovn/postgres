@@ -16,6 +16,7 @@
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_jsonbc_dict.h"
+#include "catalog/pg_enum.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #else
@@ -39,8 +40,8 @@
 static JsonbcKeyId
 jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name);
 
-JsonbcKeyId
-jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name, bool insert)
+static JsonbcKeyId
+jsonbcDictGetIdByNameSeq(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 {
 	text	   *txt = cstring_to_text_with_len(name.s, name.len);
 	HeapTuple	tuple = SearchSysCache2(JSONBCDICTNAME,
@@ -90,8 +91,44 @@ jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 	return id;
 }
 
-JsonbcKeyName
-jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
+static JsonbcKeyId
+jsonbcDictGetIdByNameEnum(JsonbcDictId dict, JsonbcKeyName name)
+{
+	Oid			enumOid = JsonbcDictIdGetEnumOid(dict);
+	NameData	nameData;
+	HeapTuple	tuple;
+	JsonbcKeyId	id;
+
+	if (name.len >= NAMEDATALEN)
+		return JsonbcInvalidKeyId;
+
+	memcpy(NameStr(nameData), name.s, name.len);
+	NameStr(nameData)[name.len] = '\0';
+
+	tuple = SearchSysCache2(ENUMTYPOIDNAME,
+							ObjectIdGetDatum(enumOid),
+							NameGetDatum(&nameData));
+
+	if (!HeapTupleIsValid(tuple))
+		return JsonbcInvalidKeyId;
+
+	id = HeapTupleGetOid(tuple);
+
+	ReleaseSysCache(tuple);
+
+	return id;
+}
+
+JsonbcKeyId
+jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name, bool insert)
+{
+	return JsonbcDictIdIsEnum(dict)
+				? jsonbcDictGetIdByNameEnum(dict, name)
+				: jsonbcDictGetIdByNameSeq(dict, name, insert);
+}
+
+static JsonbcKeyName
+jsonbcDictGetNameByIdSeq(JsonbcDictId dict, JsonbcKeyId id)
 {
 	JsonbcKeyName	name;
 	HeapTuple		tuple = SearchSysCache2(JSONBCDICTID,
@@ -113,6 +150,41 @@ jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
 	}
 
 	return name;
+}
+
+static JsonbcKeyName
+jsonbcDictGetNameByIdEnum(JsonbcDictId dict, JsonbcKeyId id)
+{
+	JsonbcKeyName	name;
+	HeapTuple		tuple = SearchSysCache1(ENUMOID,
+											ObjectIdGetDatum((Oid) id));
+
+	if (HeapTupleIsValid(tuple))
+	{
+		Form_pg_enum	enumTuple = (Form_pg_enum) GETSTRUCT(tuple);
+		Name			label = &enumTuple->enumlabel;
+
+		Assert(JsonbcDictIdGetEnumOid(dict) == enumTuple->enumtypid);
+
+		name.len = strlen(NameStr(*label));
+		name.s = memcpy(palloc(name.len), NameStr(*label), name.len);
+
+		ReleaseSysCache(tuple);
+	}
+	else
+	{
+		name.s = NULL;
+		name.len = 0;
+	}
+
+	return name;
+}
+
+JsonbcKeyName
+jsonbcDictGetNameById(JsonbcDictId dict, JsonbcKeyId id)
+{
+	return JsonbcDictIdIsEnum(dict) ? jsonbcDictGetNameByIdEnum(dict, id)
+									: jsonbcDictGetNameByIdSeq(dict, id);
 }
 
 #else
@@ -402,9 +474,18 @@ jsonbcDictAddRef(Form_pg_attribute attr, JsonbcDictId dict)
 	ObjectAddress	dep;
 	ObjectAddress	ref;
 
-	ObjectAddressSet(dep, RelationRelationId, dict);
-	ObjectAddressSubSet(ref, RelationRelationId, attr->attrelid, attr->attnum);
-	recordDependencyOn(&dep, &ref, DEPENDENCY_INTERNAL);
+	if (JsonbcDictIdIsEnum(dict))
+	{
+		ObjectAddressSubSet(dep, RelationRelationId, attr->attrelid, attr->attnum);
+		ObjectAddressSet(ref, TypeRelationId, JsonbcDictIdGetEnumOid(dict));
+		recordDependencyOn(&dep, &ref, DEPENDENCY_NORMAL);
+	}
+	else
+	{
+		ObjectAddressSet(dep, RelationRelationId, dict);
+		ObjectAddressSubSet(ref, RelationRelationId, attr->attrelid, attr->attnum);
+		recordDependencyOn(&dep, &ref, DEPENDENCY_INTERNAL);
+	}
 #endif
 }
 
@@ -441,10 +522,20 @@ void
 jsonbcDictRemoveRef(Form_pg_attribute att, JsonbcDictId dict)
 {
 #ifdef JSONBC_DICT_SEQUENCES
-	long totalCount;
-	int	cnt = changeDependencyFor(RelationRelationId, dict,
-								  RelationRelationId, att->attrelid, att->attnum,
-								  InvalidOid, &totalCount);
+	long	totalCount;
+	int		cnt;
+
+	if (JsonbcDictIdIsEnum(dict))
+	{
+		changeDependencyFor(RelationRelationId, att->attrelid, att->attnum,
+							TypeRelationId, JsonbcDictIdGetEnumOid(dict),
+							InvalidOid, &totalCount);
+		return;
+	}
+
+	cnt = changeDependencyFor(RelationRelationId, dict,
+							  RelationRelationId, att->attrelid, att->attnum,
+							  InvalidOid, &totalCount);
 
 	Assert(cnt <= 1);
 

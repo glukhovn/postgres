@@ -1353,13 +1353,15 @@ jsonbcDecompress(Datum value, CompressionOptions options)
 #endif
 }
 
-#define JSONBC_DICT_ID_OPTION "dict_id"
+#define JSONBC_DICT_ID_OPTION	"dict_id"
+#define JSONBC_DICT_ENUM_OPTION	"dict_enum"
 
 static JsonbcDictId
 jsonbcOptionsProcess(List *options, bool replaceNamesWithOids)
 {
 	ListCell   *cell;
 	Oid			dictId = InvalidOid;
+	Oid			dictEnum = InvalidOid;
 	char		dictIdStr[20];
 
 	foreach(cell, options)
@@ -1382,16 +1384,41 @@ jsonbcOptionsProcess(List *options, bool replaceNamesWithOids)
 				def->arg = (Node *) makeString(pstrdup(dictIdStr));
 			}
 		}
+		else if (!strcmp(def->defname, JSONBC_DICT_ENUM_OPTION))
+		{
+			dictEnum = (int32) DatumGetObjectId(DirectFunctionCall1(
+							regtypein, CStringGetDatum(defGetString(def))));
+
+			if (!OidIsValid(dictEnum))
+				ereport(ERROR,
+						(errcode(ERRCODE_UNDEFINED_OBJECT),
+						 errmsg("type \"%s\" does not exist", defGetString(def))));
+
+			if (!type_is_enum(dictEnum))
+				elog(ERROR,
+					 "jsonbc compression method: '%s' is not an enum type",
+					 format_type_be(dictEnum));
+
+			if (replaceNamesWithOids)
+			{
+				snprintf(dictIdStr, sizeof(dictIdStr), "%d", dictEnum);
+				def->arg = (Node *) makeString(pstrdup(dictIdStr));
+			}
+		}
 		else
 			elog(ERROR, "jsonbc compression method: unrecognized option '%s'",
 				 def->defname);
 	}
 
-	if (!OidIsValid(dictId))
+	if (!OidIsValid(dictId) && !OidIsValid(dictEnum))
 		elog(ERROR, "jsonbc compression method: option '%s' is required",
 			 JSONBC_DICT_ID_OPTION);
 
-	return dictId;
+	if (OidIsValid(dictId) && OidIsValid(dictEnum))
+		elog(ERROR, "jsonbc compression method: options '%s' and '%s' are mutually exclusive",
+			 JSONBC_DICT_ID_OPTION, JSONBC_DICT_ENUM_OPTION);
+
+	return dictId ? dictId : dictEnum | JsonbcDictIdEnumFlag;
 }
 
 static List *
