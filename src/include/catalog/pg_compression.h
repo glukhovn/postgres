@@ -70,7 +70,7 @@ DESCR("jsonb null compression method");
 DATA(insert OID = 3368 (  jsonb			jsonb_handler			 114 0 ));
 DESCR("jsonb compression method");
 #define JSONB_CM_OID 3368
-DATA(insert OID = 3369 (  jsonbc		jsonbc_handler			 114 0 ));
+DATA(insert OID = 3369 (  jsonbc		jsonbc_handler			2276 0 ));
 DESCR("jsonbc compression method");
 #define JSONBC_CM_OID 3369
 

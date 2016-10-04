@@ -1376,7 +1376,8 @@ jsonbcOptionsProcess(List *options)
 static List *
 jsonbcOptionsValidate(Form_pg_attribute attr, List *options)
 {
-	if (getBaseType(attr->atttypid) != JSONOID)
+	if (getBaseType(attr->atttypid) != JSONOID &&
+		getBaseType(attr->atttypid) != JSONBOID)
 		elog(ERROR, "jsonbc compression method is only applicable to json type");
 
 	if (options != NIL)
