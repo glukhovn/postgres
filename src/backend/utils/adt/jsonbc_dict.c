@@ -40,7 +40,7 @@ static JsonbcKeyId
 jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name);
 
 JsonbcKeyId
-jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
+jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 {
 	text	   *txt = cstring_to_text_with_len(name.s, name.len);
 	HeapTuple	tuple = SearchSysCache2(JSONBCDICTNAME,
@@ -53,7 +53,7 @@ jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
 		id = ((Form_pg_jsonbc_dict) GETSTRUCT(tuple))->id;
 		ReleaseSysCache(tuple);
 	}
-	else
+	else if (insert)
 	{
 #ifndef JSONBC_DICT_UPSERT
 		Datum		values[Natts_pg_jsonbc_dict];
@@ -82,6 +82,8 @@ jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
 		id = jsonbcDictGetIdByNameSlow(dict, name);
 #endif
 	}
+	else
+		id = JsonbcInvalidKeyId;
 
 	pfree(txt);
 
