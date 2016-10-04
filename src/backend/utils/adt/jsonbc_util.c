@@ -113,14 +113,22 @@ static JEntry jsonbcEncodeValue(StringInfo buffer, const JsonbValue *val,
 								int level, JsonbcDictId dict);
 
 static JsonbcKeyId
-jsonbcConvertKeyNameToId(JsonbcDictId dict, const JsonValue *string)
+jsonbcConvertKeyNameToId(JsonbcDictId dict, const JsonValue *string,
+						 bool insert)
 {
 	JsonbcKeyName	keyName;
+	JsonbcKeyId		keyId;
 
 	keyName.s = string->val.string.val;
 	keyName.len = string->val.string.len;
 
-	return jsonbcDictGetIdByName(dict, keyName);
+	keyId = jsonbcDictGetIdByName(dict, keyName, insert);
+
+	if (insert && keyId == JsonbcInvalidKeyId)
+		elog(ERROR, "could not insert key \"%.*s\" into jsonbc dictionary",
+			 keyName.len, keyName.s);
+
+	return keyId;
 }
 
 #define MAX_VARBYTE_SIZE 5
@@ -446,7 +454,8 @@ jsonbcEncodeObject(StringInfo buffer, const JsonValue *val, int level,
 
 		for (i = 0; i < nPairs; i++)
 		{
-			jbcpairs[i].key = jsonbcConvertKeyNameToId(dict, &jbpairs[i].key);
+			jbcpairs[i].key = jsonbcConvertKeyNameToId(dict, &jbpairs[i].key,
+													   true);
 			jbcpairs[i].value = jbpairs[i].value;
 			jbcpairs[i].order = jbpairs[i].order;
 		}
@@ -1192,7 +1201,10 @@ jsonbcFindKeyInObject(JsonContainer *jc, const JsonValue *key)
 	if (!jsonbcIteratorInit(&it, jc, false, false))
 		return NULL;
 
-	keyId = jsonbcConvertKeyNameToId(it.dict, key);
+	keyId = jsonbcConvertKeyNameToId(it.dict, key, false);
+
+	if (keyId == JsonbcInvalidKeyId)
+		return NULL;
 
 	return jsonbcIteratorFindKey(&it, keyId);
 }

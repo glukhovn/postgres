@@ -308,7 +308,7 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 
 #ifndef JSONBC_DICT_SYSCACHE
 JsonbcKeyId
-jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name)
+jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 {
 	NameToIdKey	nameToIdKey;
 	NameToId   *nameToId;
@@ -545,7 +545,7 @@ jsonbc_get_id_by_name(PG_FUNCTION_ARGS)
 
 	name.s = VARDATA_ANY(nameText);
 	name.len = VARSIZE_ANY_EXHDR(nameText);
-	id = jsonbcDictGetIdByName(dict, name);
+	id = jsonbcDictGetIdByName(dict, name, false);
 
 	PG_RETURN_DATUM(JsonbcKeyIdGetDatum(id));
 }
