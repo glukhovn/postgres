@@ -1557,6 +1557,13 @@ describeOneTableDetails(const char *schemaname,
 							 "  pg_options_to_table(attfdwoptions)), ', ') || ')' END AS attfdwoptions");
 	else
 		appendPQExpBufferStr(&buf, ",\n  NULL AS attfdwoptions");
+	if (pset.sversion >= 90600)
+		appendPQExpBufferStr(&buf, ",\n  CASE WHEN attcompression = 0 THEN NULL ELSE "
+							 " (SELECT c.cmname FROM pg_catalog.pg_compression c\n"
+							 "   WHERE c.oid = a.attcompression) "
+							 " END AS attcmname");
+	else
+		appendPQExpBufferStr(&buf, "\n  NULL AS attcmname");
 	if (verbose)
 	{
 		appendPQExpBufferStr(&buf, ",\n  a.attstorage");
@@ -1740,6 +1747,15 @@ describeOneTableDetails(const char *schemaname,
 								  PQgetvalue(res, i, 2));
 			}
 
+			if (strlen(PQgetvalue(res, i, 8)) != 0)
+			{
+				if (tmpbuf.len > 0)
+					appendPQExpBufferChar(&tmpbuf, ' ');
+				/* translator: default values of column definitions */
+				appendPQExpBuffer(&tmpbuf, _("compressed %s"),
+								  PQgetvalue(res, i, 8));
+			}
+
 			modifiers[i] = pg_strdup(tmpbuf.data);
 			printTableAddCell(&cont, modifiers[i], false, false);
 		}
@@ -1759,7 +1775,7 @@ describeOneTableDetails(const char *schemaname,
 		/* Storage and Description */
 		if (verbose)
 		{
-			int			firstvcol = 8;
+			int			firstvcol = 9;
 			char	   *storage = PQgetvalue(res, i, firstvcol);
 
 			/* these strings are literal in our syntax, so not translated. */
