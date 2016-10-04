@@ -1559,8 +1559,14 @@ describeOneTableDetails(const char *schemaname,
 		appendPQExpBufferStr(&buf, ",\n  NULL AS attfdwoptions");
 	if (pset.sversion >= 90600)
 		appendPQExpBufferStr(&buf, ",\n  CASE WHEN attcompression = 0 THEN NULL ELSE "
-							 " (SELECT c.cmname FROM pg_catalog.pg_compression c\n"
-							 "   WHERE c.oid = a.attcompression) "
+							 " (SELECT c.cmname || "
+							 "		(CASE WHEN attcmoptions IS NULL "
+							 "		 THEN '' "
+							 "		 ELSE '(' || array_to_string(ARRAY(SELECT quote_ident(option_name) || ' ' || quote_literal(option_value)"
+							 "											  FROM pg_options_to_table(attcmoptions)), ', ') || ')'"
+							 " 		 END) "
+							 "  FROM pg_catalog.pg_compression c "
+							 "  WHERE c.oid = a.attcompression) "
 							 " END AS attcmname");
 	else
 		appendPQExpBufferStr(&buf, "\n  NULL AS attcmname");
