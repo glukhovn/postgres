@@ -1356,10 +1356,11 @@ jsonbcDecompress(Datum value, CompressionOptions options)
 #define JSONBC_DICT_ID_OPTION "dict_id"
 
 static JsonbcDictId
-jsonbcOptionsProcess(List *options)
+jsonbcOptionsProcess(List *options, bool replaceNamesWithOids)
 {
 	ListCell   *cell;
-	int32		dictId = -1;
+	Oid			dictId = InvalidOid;
+	char		dictIdStr[20];
 
 	foreach(cell, options)
 	{
@@ -1367,18 +1368,26 @@ jsonbcOptionsProcess(List *options)
 
 		if (!strcmp(def->defname, JSONBC_DICT_ID_OPTION))
 		{
-			dictId = pg_atoi(defGetString(def), 4, 0);
-			if (dictId < 0)
+			dictId = (int32) DatumGetObjectId(DirectFunctionCall1(
+							regclassin, CStringGetDatum(defGetString(def))));
+
+			if (!OidIsValid(dictId))
 				elog(ERROR,
 					 "jsonbc compression method: invalid value for option '%s'",
 					 def->defname);
+
+			if (replaceNamesWithOids)
+			{
+				snprintf(dictIdStr, sizeof(dictIdStr), "%d", dictId);
+				def->arg = (Node *) makeString(pstrdup(dictIdStr));
+			}
 		}
 		else
 			elog(ERROR, "jsonbc compression method: unrecognized option '%s'",
 				 def->defname);
 	}
 
-	if (dictId == -1)
+	if (!OidIsValid(dictId))
 		elog(ERROR, "jsonbc compression method: option '%s' is required",
 			 JSONBC_DICT_ID_OPTION);
 
@@ -1393,7 +1402,7 @@ jsonbcOptionsValidate(Form_pg_attribute attr, List *options)
 		elog(ERROR, "jsonbc compression method is only applicable to json type");
 
 	if (options != NIL)
-		jsonbcOptionsProcess(options);
+		jsonbcOptionsProcess(options, true);
 	else
 	{
 		JsonbcDictId	dictId = jsonbcDictCreate(attr);
@@ -1413,7 +1422,8 @@ jsonbcOptionsValidate(Form_pg_attribute attr, List *options)
 static CompressionOptions
 jsonbcOptionsConvert(Form_pg_attribute attr, List *options)
 {
-	return GetCompressionOptionsFromJsonbcDictId(jsonbcOptionsProcess(options));
+	return GetCompressionOptionsFromJsonbcDictId(
+					jsonbcOptionsProcess(options, false));
 }
 
 static bool
@@ -1436,14 +1446,14 @@ jsonbcCompressionMethodOptionsRoutines =
 static void
 jsonbcAddAttr(Form_pg_attribute attr, List *options)
 {
-	JsonbcDictId dict = jsonbcOptionsProcess(options);
+	JsonbcDictId dict = jsonbcOptionsProcess(options, false);
 	jsonbcDictAddRef(attr, dict);
 }
 
 static void
 jsonbcDropAttr(Form_pg_attribute attr, List *options)
 {
-	JsonbcDictId dict = jsonbcOptionsProcess(options);
+	JsonbcDictId dict = jsonbcOptionsProcess(options, false);
 	jsonbcDictRemoveRef(attr, dict);
 }
 
