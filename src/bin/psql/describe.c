@@ -1557,7 +1557,7 @@ describeOneTableDetails(const char *schemaname,
 							 "  pg_options_to_table(attfdwoptions)), ', ') || ')' END AS attfdwoptions");
 	else
 		appendPQExpBufferStr(&buf, ",\n  NULL AS attfdwoptions");
-	if (pset.sversion >= 90600)
+	if (pset.sversion >= 100000)
 		appendPQExpBufferStr(&buf, ",\n  CASE WHEN attcompression = 0 THEN NULL ELSE "
 							 " (SELECT c.cmname || "
 							 "		(CASE WHEN attcmoptions IS NULL "
