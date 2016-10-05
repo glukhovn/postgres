@@ -564,7 +564,6 @@ static JsonValue *
 jsonvFindValueInArray(JsonContainer *arrc, const JsonValue *val)
 {
 	JsonValue  *arr = (JsonValue *) arrc->data;
-	int			i;
 
 	Assert(JsonContainerIsArray(arrc));
 	Assert(IsAJsonbScalar(val));
@@ -572,17 +571,25 @@ jsonvFindValueInArray(JsonContainer *arrc, const JsonValue *val)
 	if (arr->type == jbvBinary)
 	{
 		JsonContainer *jsc = arr->val.binary.data;
-		Assert(jsc->type == jbvArray);
+		Assert(JsonContainerIsArray(jsc));
 		return (*jsc->ops->findValueInArray)(jsc, val);
 	}
-
-	Assert(arr->type == jbvArray);
-
-	for (i = 0; i < arr->val.array.nElems; i++)
+	else if (arr->type == jbvArray)
 	{
-		JsonValue *elem = &arr->val.array.elems[i];
-		if (val->type == elem->type && equalsJsonbScalarValue(val, elem))
-			return elem; /* FIXME palloced copy */
+		int	i;
+
+		for (i = 0; i < arr->val.array.nElems; i++)
+		{
+			JsonValue *elem = &arr->val.array.elems[i];
+			if (val->type == elem->type && equalsJsonbScalarValue(val, elem))
+				return elem; /* FIXME palloced copy */
+		}
+	}
+	else
+	{
+		Assert(IsAJsonbScalar(arr));
+		if (arr->type == val->type && equalsJsonbScalarValue(val, arr))
+			return arr;
 	}
 
 	return NULL;
@@ -601,13 +608,19 @@ jsonvGetArrayElement(JsonContainer *arrc, uint32 index)
 		Assert(jsc->type == jbvArray);
 		return (*jsc->ops->getArrayElement)(jsc, index);
 	}
+	else if (arr->type == jbvArray)
+	{
+		if (index >= arr->val.array.nElems)
+			return NULL;
 
-	Assert(arr->type == jbvArray);
-
-	if (index >= arr->val.array.nElems)
-		return NULL;
-
-	return &arr->val.array.elems[index]; /* FIXME palloced copy */
+		return &arr->val.array.elems[index]; /* FIXME palloced copy */
+	}
+	else
+	{
+		Assert(IsAJsonbScalar(arr));
+		Assert(!index);
+		return index ? NULL : arr;
+	}
 }
 
 static uint32
@@ -625,10 +638,13 @@ jsonvGetArraySize(JsonContainer *arrc)
 			((JsonContainerData *) jsc)->size = (*jsc->ops->getArraySize)(jsc);
 		return jsc->size;
 	}
-
-	Assert(arr->type == jbvArray);
-
-	return arr->val.array.nElems;
+	else if (arr->type == jbvArray)
+		return arr->val.array.nElems;
+	else
+	{
+		Assert(IsAJsonbScalar(arr));
+		return 1;
+	}
 }
 
 static JsonContainer *
