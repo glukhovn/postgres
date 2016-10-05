@@ -4859,7 +4859,7 @@ DATA(insert OID = 3207 (  jsonb_array_length			PGNSP PGUID 12 1 0 0 0 f f f f t 
 DESCR("length of jsonb array");
 DATA(insert OID = 3931 (  jsonb_object_keys			PGNSP PGUID 12 1 100 0 0 f f f f t t i s 1 0 25 "3802" _null_ _null_ _null_ _null_ _null_ jsonb_object_keys _null_ _null_ _null_ ));
 DESCR("get jsonb object keys");
-DATA(insert OID = 3398 (  jsonb_object_keys			PGNSP PGUID 12 1 100 0 0 f f f f t t i s 1 0 25 "3802" _null_ _null_ _null_ _null_ _null_ jsonb_extract_keys _null_ _null_ _null_ ));
+DATA(insert OID = 3398 (  jsonb_extract_keys		PGNSP PGUID 12 1 100 0 0 f f f f t t i s 1 0 25 "3802" _null_ _null_ _null_ _null_ _null_ jsonb_extract_keys _null_ _null_ _null_ ));
 DESCR("extract all keys from a jsonb");
 DATA(insert OID = 3208 (  jsonb_each				   PGNSP PGUID 12 1 100 0 0 f f f f t t i s 1 0 2249 "3802" "{3802,25,3802}" "{i,o,o}" "{from_json,key,value}" _null_ _null_ jsonb_each _null_ _null_ _null_ ));
 DESCR("key value pairs of a jsonb object");
