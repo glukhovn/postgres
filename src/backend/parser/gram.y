@@ -5779,7 +5779,7 @@ opt_restart_seqs:
  *	The COMMENT ON statement can take different forms based upon the type of
  *	the object associated with the comment. The form of the statement is:
  *
- *	COMMENT ON [ [ ACCESS METHOD | CONVERSION | COLLATION |
+ *	COMMENT ON [ [ ACCESS METHOD | COMPRESSION METHOD | CONVERSION | COLLATION |
  *                 DATABASE | DOMAIN |
  *                 EXTENSION | EVENT TRIGGER | FOREIGN DATA WRAPPER |
  *                 FOREIGN TABLE | INDEX | [PROCEDURAL] LANGUAGE |
