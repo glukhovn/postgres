@@ -2213,7 +2213,7 @@ jsonb_null_cm_handler(PG_FUNCTION_ARGS)
 	cmr->compress = jsonbCompressJsonb;
 	cmr->decompress = NULL;
 
-	return PointerGetDatum(cmr);
+	PG_RETURN_POINTER(cmr);
 }
 
 Datum
