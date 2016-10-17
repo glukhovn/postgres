@@ -2227,5 +2227,5 @@ jsonb_handler(PG_FUNCTION_ARGS)
 	cmr->compress = jsonbCompressJsont;
 	cmr->decompress = jsonbDecompress;
 
-	return PointerGetDatum(cmr);
+	PG_RETURN_POINTER(cmr);
 }

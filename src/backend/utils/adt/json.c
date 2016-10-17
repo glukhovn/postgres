@@ -3048,5 +3048,5 @@ json_null_cm_handler(PG_FUNCTION_ARGS)
 	cmr->compress = jsontCompress;
 	cmr->decompress = NULL;
 
-	return PointerGetDatum(cmr);
+	PG_RETURN_POINTER(cmr);
 }
