@@ -1495,7 +1495,7 @@ jsonbc_handler(PG_FUNCTION_ARGS)
 	cmr->compress = jsonbcCompress;
 	cmr->decompress = jsonbcDecompress;
 
-	return PointerGetDatum(cmr);
+	PG_RETURN_POINTER(cmr);
 }
 
 PG_FUNCTION_INFO_V1(jsonbc_get_dict_id);
