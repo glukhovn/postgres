@@ -697,9 +697,17 @@ TupleDescGetAttributeCompression(TupleDesc tupdesc, AttrNumber attnum)
 Datum
 tuple_compress_attr(TupleDesc tupdesc, AttrNumber attnum, Datum value)
 {
-	AttributeCompression *compression =
+	AttributeCompression *ac =
 			TupleDescGetAttributeCompression(tupdesc, attnum);
-	return compression->routine->compress(value, compression->options);
+	Datum	tmp = ac->routineNull ?
+				  ac->routineNull->compress(value, NULL) :
+				  value;
+	Datum	res = ac->routine->compress(tmp, ac->options);
+
+	if (DatumGetPointer(tmp) != DatumGetPointer(value))
+		pfree(DatumGetPointer(tmp));
+
+	return res;
 }
 
 Datum
