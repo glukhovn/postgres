@@ -29,6 +29,9 @@ typedef struct CompressionMethodOptionsRoutines
 	bool				(*equal)(CompressionOptions o1, CompressionOptions o2);
 } CompressionMethodOptionsRoutines;
 
+typedef Datum (*CompressionRoutine)  (Datum value, CompressionOptions options);
+typedef Datum (*DecompressionRoutine)(Datum value, CompressionOptions options);
+
 /*
  * API struct for an compression method.
  * Note this must be stored in a single palloc'd chunk of memory.
@@ -39,8 +42,8 @@ typedef struct CompressionMethodRoutine
 	CompressionMethodOptionsRoutines *options;
 	void	  (*addAttr)(Form_pg_attribute attr, List *options);
 	void	  (*dropAttr)(Form_pg_attribute attr, List *options);
-	Datum	  (*compress)(Datum value, CompressionOptions options);
-	Datum	  (*decompress)(Datum value, CompressionOptions options);
+	CompressionRoutine		compress;
+	DecompressionRoutine	decompress;
 } CompressionMethodRoutine;
 
 extern CompressionMethodRoutine *GetCompressionMethodRoutine(Oid cmhandler);
