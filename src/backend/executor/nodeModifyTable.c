@@ -1316,6 +1316,7 @@ ExecModifyTable(ModifyTableState *node)
 	ItemPointerData tuple_ctid;
 	HeapTupleData oldtupdata;
 	HeapTuple	oldtuple;
+	MemoryContext oldcxt;
 
 	/*
 	 * This should NOT get called during EvalPlanQual; we should have passed a
@@ -1493,6 +1494,8 @@ ExecModifyTable(ModifyTableState *node)
 				slot = ExecFilterJunk(junkfilter, slot);
 		}
 
+		oldcxt = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
+
 		switch (operation)
 		{
 			case CMD_INSERT:
@@ -1512,6 +1515,8 @@ ExecModifyTable(ModifyTableState *node)
 				elog(ERROR, "unknown operation");
 				break;
 		}
+
+		MemoryContextSwitchTo(oldcxt);
 
 		/*
 		 * If we got a RETURNING result, return it to caller.  We'll continue
@@ -1533,6 +1538,8 @@ ExecModifyTable(ModifyTableState *node)
 	fireASTriggers(node);
 
 	node->mt_done = true;
+
+	MemoryContextStats(TopMemoryContext);
 
 	return NULL;
 }

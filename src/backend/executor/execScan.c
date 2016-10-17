@@ -217,7 +217,9 @@ ExecScan(ScanState *node,
 				 * and return it --- unless we find we can project no tuples
 				 * from this scan tuple, in which case continue scan.
 				 */
+				MemoryContext oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 				resultSlot = ExecProject(projInfo, &isDone);
+				MemoryContextSwitchTo(oldContext);
 				if (isDone != ExprEndResult)
 				{
 					node->ps.ps_TupFromTlist = (isDone == ExprMultipleResult);
