@@ -4843,7 +4843,8 @@ GetAttributeCompression(ColumnCompression *compression,
 		*optionsList = NIL;
 	}
 
-	*cmr = OidIsValid(*cmid) ? GetCompressionMethodRoutineByCmId(*cmid) : NULL;
+	*cmr = OidIsValid(*cmid) ?
+			GetCompressionMethodRoutineByCmId(*cmid, att->atttypid) : NULL;
 
 	if (*cmr && (*cmr)->options && (*cmr)->options->validate)
 		*optionsList = (*cmr)->options->validate(att, *optionsList);
@@ -11484,7 +11485,8 @@ ATExecAlterColumnCompression(AlteredTableInfo *tab, Relation rel,
 		if (OidIsValid(oldCm))
 		{
 			CompressionMethodRoutine *oldCmr =
-					GetCompressionMethodRoutineByCmId(oldCm);
+					GetCompressionMethodRoutineByCmId(oldCm,
+													  atttableform->atttypid);
 
 			if (oldCmr->dropAttr)
 			{

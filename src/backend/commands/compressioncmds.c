@@ -277,12 +277,16 @@ GetCompressionMethodName(Oid cmOid)
  * which will be palloc'd in the caller's context.
  */
 CompressionMethodRoutine *
-GetCompressionMethodRoutine(Oid cmhandler)
+GetCompressionMethodRoutine(Oid cmhandler, Oid typeid)
 {
-	Datum		datum;
-	CompressionMethodRoutine *routine;
+	Datum						datum;
+	CompressionMethodRoutine   *routine;
+	CompressionMethodOpArgs		opargs;
 
-	datum = OidFunctionCall0(cmhandler);
+	opargs.op = CMOP_GET_ROUTINE;
+	opargs.args.getRoutine.typeid = typeid;
+
+	datum = OidFunctionCall1(cmhandler, PointerGetDatum(&opargs));
 	routine = (CompressionMethodRoutine *) DatumGetPointer(datum);
 
 	if (routine == NULL || !IsA(routine, CompressionMethodRoutine))
@@ -299,7 +303,7 @@ GetCompressionMethodRoutine(Oid cmhandler)
  * and get its CompressionMethodRoutine struct.
  */
 CompressionMethodRoutine *
-GetCompressionMethodRoutineByCmId(Oid cmoid)
+GetCompressionMethodRoutineByCmId(Oid cmoid, Oid typeid)
 {
 	HeapTuple			tuple;
 	Form_pg_compression	cmform;
@@ -325,5 +329,5 @@ GetCompressionMethodRoutineByCmId(Oid cmoid)
 	ReleaseSysCache(tuple);
 
 	/* And finally, call the handler function to get the API struct. */
-	return GetCompressionMethodRoutine(cmhandler);
+	return GetCompressionMethodRoutine(cmhandler, typeid);
 }

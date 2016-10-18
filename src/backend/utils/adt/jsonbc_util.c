@@ -1315,11 +1315,14 @@ JsonbcEncode(StringInfoData *buffer, const JsonValue *val,
 	(void) jsonbcEncodeValue(buffer, val, 0, dict);
 }
 
-static Datum
+static inline Datum
+#ifndef JSON_FULL_DECOMPRESSION
+jsonbcCompress(Json *json, CompressionOptions options)
+#else
 jsonbcCompress(Datum value, CompressionOptions options)
+#endif
 {
 #ifndef JSON_FULL_DECOMPRESSION
-	Json	   *json = DatumGetJsont(value);
 	JsonValue	jvbuf;
 	JsonValue  *jv = JsonToJsonValue(json, &jvbuf);
 #else
@@ -1329,6 +1332,26 @@ jsonbcCompress(Datum value, CompressionOptions options)
 #endif
 	Jsonbc	   *jsonbc = JsonValueToJsonbc(jv, options);
 	return JsonbcGetDatum(jsonbc);
+}
+
+static Datum
+jsonbcCompressJsont(Datum value, CompressionOptions options)
+{
+#ifndef JSON_FULL_DECOMPRESSION
+	return jsonbcCompress(DatumGetJsont(value), options);
+#else
+	return jsonbcCompress(value, options);
+#endif
+}
+
+static Datum
+jsonbcCompressJsonb(Datum value, CompressionOptions options)
+{
+#ifndef JSON_FULL_DECOMPRESSION
+	return jsonbcCompress(DatumGetJsonb(value), options);
+#else
+	return jsonbcCompress(value, options);
+#endif
 }
 
 static Datum
@@ -1487,12 +1510,19 @@ jsonbcDropAttr(Form_pg_attribute attr, List *options)
 Datum
 jsonbc_handler(PG_FUNCTION_ARGS)
 {
-	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
+	CompressionMethodOpArgs	   *opargs = (CompressionMethodOpArgs *)
+														PG_GETARG_POINTER(0);
+	CompressionMethodRoutine   *cmr = makeNode(CompressionMethodRoutine);
+	Oid							typeid = opargs->args.getRoutine.typeid;
+
+	if (typeid != JSONOID && typeid != JSONBOID)
+		elog(ERROR, "unexpected type %d for jsonbc compression method", typeid);
 
 	cmr->options = &jsonbcCompressionMethodOptionsRoutines;
 	cmr->addAttr = jsonbcAddAttr;
 	cmr->dropAttr = jsonbcDropAttr;
-	cmr->compress = jsonbcCompress;
+	cmr->compress = typeid == JSONOID ? jsonbcCompressJsont
+									  : jsonbcCompressJsonb;
 	cmr->decompress = jsonbcDecompress;
 
 	PG_RETURN_POINTER(cmr);
