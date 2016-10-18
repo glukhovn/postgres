@@ -14,6 +14,9 @@
 #include "utils/memutils.h"
 #include "utils/builtins.h"
 
+
+JsonCacheContext JsonCache;
+
 static Json *JsonExpand(Datum value, JsonContainerOps *ops,
 						CompressionOptions opts, Json *tmp);
 
