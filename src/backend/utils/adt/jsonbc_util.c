@@ -1518,6 +1518,7 @@ jsonbc_handler(PG_FUNCTION_ARGS)
 	if (typeid != JSONOID && typeid != JSONBOID)
 		elog(ERROR, "unexpected type %d for jsonbc compression method", typeid);
 
+	cmr->flags = CM_EXTENDED_REPRESENTATION;
 	cmr->options = &jsonbcCompressionMethodOptionsRoutines;
 	cmr->addAttr = jsonbcAddAttr;
 	cmr->dropAttr = jsonbcDropAttr;

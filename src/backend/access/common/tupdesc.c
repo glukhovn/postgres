@@ -688,9 +688,13 @@ TupleDescInitAttrCompression(TupleDesc desc,
 				  cmr->options->convert(desc->attrs[attnum - 1], optionsList) :
 				  optionsList;
 
-	nullcmoid = get_base_typnullcm(desc->attrs[attnum - 1]->atttypid);
+	nullcmoid = (cmr->flags & CM_EXTENDED_REPRESENTATION)
+					? InvalidOid
+					: get_base_typnullcm(desc->attrs[attnum - 1]->atttypid);
+
 	ac->routineNull = OidIsValid(nullcmoid)
-						? GetCompressionMethodRoutineByCmId(nullcmoid)
+						? GetCompressionMethodRoutineByCmId(nullcmoid,
+											desc->attrs[attnum - 1]->atttypid)
 						: NULL;
 }
 

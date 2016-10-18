@@ -3042,6 +3042,7 @@ json_null_cm_handler(PG_FUNCTION_ARGS)
 {
 	CompressionMethodRoutine *cmr = makeNode(CompressionMethodRoutine);
 
+	cmr->flags = CM_EXTENDED_REPRESENTATION;
 	cmr->options = NULL;
 	cmr->addAttr = NULL;
 	cmr->dropAttr = NULL;
