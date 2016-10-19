@@ -655,7 +655,7 @@ SELECT count(*) FROM testjson WHERE j ? 'bar';
 SELECT count(*) FROM testjson WHERE j ?| ARRAY['public','disabled'];
 SELECT count(*) FROM testjson WHERE j ?& ARRAY['public','disabled'];
 
-CREATE INDEX jidx ON testjson USING gin (j);
+CREATE INDEX testjson_jidx ON testjson USING gin (j);
 SET enable_seqscan = off;
 
 SELECT count(*) FROM testjson WHERE j @> '{"wait":null}';
@@ -673,7 +673,7 @@ SELECT count(*) FROM testjson WHERE j ?| ARRAY['public','disabled'];
 SELECT count(*) FROM testjson WHERE j ?& ARRAY['public','disabled'];
 
 -- array exists - array elements should behave as keys (for GIN index scans too)
-CREATE INDEX jidx_array ON testjson USING gin((j->'array'));
+CREATE INDEX testjson_jidx_array ON testjson USING gin((j->'array'));
 SELECT count(*) from testjson  WHERE j->'array' ? 'bar';
 -- type sensitive array exists - should return no rows (since "exists" only
 -- matches strings that are either object keys or array elements)
@@ -699,18 +699,18 @@ SET enable_sort = on;
 RESET enable_hashagg;
 RESET enable_sort;
 
-DROP INDEX jidx;
-DROP INDEX jidx_array;
+DROP INDEX testjson_jidx;
+DROP INDEX testjson_jidx_array;
 -- btree
-CREATE INDEX jidx ON testjson USING btree (j);
+CREATE INDEX testjson_jidx ON testjson USING btree (j);
 SET enable_seqscan = off;
 
 SELECT count(*) FROM testjson WHERE j > '{"p": 1}';
 SELECT count(*) FROM testjson WHERE j = '{"indexed": true, "line": 371, "pos": 98, "node": "CBA"}';
 
 --gin path opclass
-DROP INDEX jidx;
-CREATE INDEX jidx ON testjson USING gin (j json_path_ops);
+DROP INDEX testjson_jidx;
+CREATE INDEX testjson_jidx ON testjson USING gin (j json_path_ops);
 SET enable_seqscan = off;
 
 SELECT count(*) FROM testjson WHERE j @> '{"wait":null}';
@@ -722,7 +722,7 @@ SELECT count(*) FROM testjson WHERE j @> '{"age":25.0}';
 SELECT count(*) FROM testjson WHERE j @> '{}';
 
 RESET enable_seqscan;
-DROP INDEX jidx;
+DROP INDEX testjson_jidx;
 
 -- nested tests
 SELECT '{"ff":{"a":12,"b":16}}'::json;
