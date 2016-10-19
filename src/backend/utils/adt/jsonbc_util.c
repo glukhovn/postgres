@@ -859,17 +859,14 @@ recurse:
 	switch (it->state)
 	{
 		case JBI_ARRAY_START:
-			/* Set v to array on first array call */
-			val->type = jbvArray;
-			val->val.array.nElems = it->childrenSize > 0 ? -1 : 0;
-			val->val.array.uniquified = true;
-			val->val.array.elemsUniquified = true;
-
 			/*
+			 * Set v to array on first array call
 			 * v->val.array.elems is not actually set, because we aren't doing
 			 * a full conversion
 			 */
-			val->val.array.rawScalar = it->isScalar;
+			JsonValueInitArray(val, it->childrenSize > 0 ? -1 : 0, 0,
+							   it->isScalar, true);
+
 			it->childrenPtr = it->children;
 			it->curDataOffset = 0;
 			it->curValueOffset = 0;	/* not actually used */
@@ -929,16 +926,13 @@ recurse:
 			}
 
 		case JBI_OBJECT_START:
-			/* Set v to object on first object call */
-			val->type = jbvObject;
-			val->val.object.nPairs = it->childrenSize > 0 ? -1 : 0;
-			val->val.object.uniquified = true;
-			val->val.object.valuesUniquified = true;
-
 			/*
+			 * Set v to object on first object call
 			 * v->val.object.pairs is not actually set, because we aren't
 			 * doing a full conversion
 			 */
+			JsonValueInitObject(val, it->childrenSize > 0 ? -1 : 0, 0, true);
+
 			it->childrenPtr = it->children;
 			it->curKey = 0;
 			it->curDataOffset = 0;

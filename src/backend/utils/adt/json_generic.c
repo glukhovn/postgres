@@ -329,10 +329,7 @@ jsonvScalarIteratorNext(JsonIterator **it, JsonValue *res, bool skipNested)
 	switch (sit->next)
 	{
 		case WJB_BEGIN_ARRAY:
-			res->type = jbvArray;
-			res->val.array.rawScalar = true;
-			res->val.array.nElems = 1;
-			res->val.array.elems = NULL;
+			JsonValueInitArray(res, 1, 0, true, true);
 			sit->next = WJB_ELEM;
 			return WJB_BEGIN_ARRAY;
 

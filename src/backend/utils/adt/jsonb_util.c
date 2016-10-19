@@ -703,10 +703,7 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			Assert(!scalarVal || scalarVal->val.array.rawScalar);
 			*pstate = pushState(pstate);
 			result = &(*pstate)->contVal;
-			(*pstate)->contVal.type = jbvArray;
-			(*pstate)->contVal.val.array.nElems = 0;
-			(*pstate)->contVal.val.array.rawScalar = (scalarVal &&
-											 scalarVal->val.array.rawScalar);
+
 			if (scalarVal && scalarVal->val.array.nElems > 0)
 			{
 				/* Assume that this array is still really a scalar */
@@ -717,22 +714,16 @@ pushJsonbValueScalar(JsonbParseState **pstate, JsonbIteratorToken seq,
 			{
 				(*pstate)->size = 4;
 			}
-			(*pstate)->contVal.val.array.elems = palloc(sizeof(JsonbValue) *
-														(*pstate)->size);
-			(*pstate)->contVal.val.array.uniquified = true;
-			(*pstate)->contVal.val.array.elemsUniquified = true;
+
+			JsonValueInitArray(result, 0, (*pstate)->size,
+							   scalarVal && scalarVal->val.array.rawScalar,
+							   true);
 			break;
 		case WJB_BEGIN_OBJECT:
 			Assert(!scalarVal);
 			*pstate = pushState(pstate);
 			result = &(*pstate)->contVal;
-			(*pstate)->contVal.type = jbvObject;
-			(*pstate)->contVal.val.object.nPairs = 0;
-			(*pstate)->size = 4;
-			(*pstate)->contVal.val.object.pairs = palloc(sizeof(JsonbPair) *
-														 (*pstate)->size);
-			(*pstate)->contVal.val.object.uniquified = true;
-			(*pstate)->contVal.val.object.valuesUniquified = true;
+			JsonValueInitObject(result, 0, (*pstate)->size = 4, true);
 			break;
 		case WJB_KEY:
 			Assert(scalarVal->type == jbvString);
@@ -789,9 +780,7 @@ pushSingleScalarJsonbValue(JsonbParseState **pstate, const JsonbValue *jbval,
 	/* single root scalar */
 	JsonbValue	va;
 
-	va.type = jbvArray;
-	va.val.array.rawScalar = true;
-	va.val.array.nElems = 1;
+	JsonValueInitArray(&va, 1, 0, true, true);
 
 	pushJsonbValue(pstate, WJB_BEGIN_ARRAY, &va);
 	pushJsonbValueExt(pstate, WJB_ELEM, jbval, unpackBinary);
@@ -955,17 +944,13 @@ recurse:
 	switch ((*it)->state)
 	{
 		case JBI_ARRAY_START:
-			/* Set v to array on first array call */
-			val->type = jbvArray;
-			val->val.array.nElems = (*it)->nElems;
-
 			/*
+			 * Set v to array on first array call
 			 * v->val.array.elems is not actually set, because we aren't doing
 			 * a full conversion
 			 */
-			val->val.array.rawScalar = (*it)->isScalar;
-			val->val.array.uniquified = true;
-			val->val.array.elemsUniquified = true;
+			JsonValueInitArray(val, (*it)->nElems, 0, (*it)->isScalar, true);
+
 			(*it)->curIndex = 0;
 			(*it)->curDataOffset = 0;
 			(*it)->curValueOffset = 0;	/* not actually used */
@@ -1011,16 +996,12 @@ recurse:
 			}
 
 		case JBI_OBJECT_START:
-			/* Set v to object on first object call */
-			val->type = jbvObject;
-			val->val.object.nPairs = (*it)->nElems;
-			val->val.object.uniquified = true;
-			val->val.object.valuesUniquified = true;
-
-			/*
+			/* Set v to object on first object call
 			 * v->val.object.pairs is not actually set, because we aren't
 			 * doing a full conversion
 			 */
+			JsonValueInitObject(val, (*it)->nElems, 0, true);
+
 			(*it)->curIndex = 0;
 			(*it)->curDataOffset = 0;
 			(*it)->curValueOffset = getJsonbOffset((*it)->container,
@@ -2037,11 +2018,7 @@ JsonValueUniquify(JsonValue *res, const JsonValue *val)
 		int	nPairs = val->val.object.nPairs;
 		int	i;
 
-		res->type = jbvObject;
-		res->val.object.nPairs = nPairs;
-		res->val.object.pairs = palloc(sizeof(JsonPair) * nPairs);
-		res->val.object.uniquified = true;
-		res->val.object.valuesUniquified = true;
+		JsonValueInitObject(res, nPairs, nPairs, true);
 
 		if (val->val.object.valuesUniquified)
 			memcpy(res->val.object.pairs, val->val.object.pairs,
@@ -2057,16 +2034,14 @@ JsonValueUniquify(JsonValue *res, const JsonValue *val)
 		if (!val->val.object.uniquified)
 			uniqueifyJsonbObject(res);
 	}
-	else if (val->type == jbvArray && !val->val.array.elemsUniquified)
+	else if (val->type == jbvArray &&
+			 !val->val.array.rawScalar &&
+			 (!res->val.array.uniquified || !val->val.array.elemsUniquified))
 	{
 		int	nElems = val->val.array.nElems;
 		int	i;
 
-		res->type = jbvArray;
-		res->val.array.nElems = nElems;
-		res->val.array.elems = palloc(sizeof(JsonValue) * nElems);
-		res->val.array.elemsUniquified = true;
-		res->val.array.rawScalar = val->val.array.rawScalar;
+		JsonValueInitArray(res, nElems, nElems, val->val.array.rawScalar, true);
 
 		for (i = 0; i < nElems; i++)
 			JsonValueUniquify(&res->val.array.elems[i],

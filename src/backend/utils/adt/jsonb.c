@@ -477,22 +477,22 @@ JsonbToCStringWorker(StringInfo out, JsonbContainer *in, int estimated_len,
 		switch (type)
 		{
 			case WJB_BEGIN_ARRAY:
-				if (skipNested && !v.val.array.uniquified)
-				{
-					element_sep[1] = v.val.array.elementSeparator[0];
-					element_sep[2] = v.val.array.elementSeparator[1];
-					element_sep[3] = v.val.array.elementSeparator[2];
-					element_sep[4] = 0;
-					element_sep_size = element_sep[1] ?
-									   element_sep[2] ?
-									   element_sep[3] ? 4 : 3 : 2 : 1;
-				}
-
 				if (!first)
 					appendBinaryStringInfo(out, ", ", ispaces);
 
 				if (!v.val.array.rawScalar)
 				{
+					if (skipNested && !v.val.array.uniquified)
+					{
+						element_sep[1] = v.val.array.elementSeparator[0];
+						element_sep[2] = v.val.array.elementSeparator[1];
+						element_sep[3] = v.val.array.elementSeparator[2];
+						element_sep[4] = 0;
+						element_sep_size = element_sep[1] ?
+										   element_sep[2] ?
+										   element_sep[3] ? 4 : 3 : 2 : 1;
+					}
+
 					add_indent(out, use_indent && !last_was_key, level);
 					appendStringInfoCharMacro(out, '[');
 				}

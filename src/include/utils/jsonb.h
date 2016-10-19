@@ -307,8 +307,9 @@ struct JsonbValue
 	((v)->type == jbvBinary ? (v)->val.binary.uniquified : \
 	 (v)->type == jbvObject ? (v)->val.object.uniquified && \
 							  (v)->val.object.valuesUniquified : \
-	 (v)->type == jbvArray ?  (v)->val.array.uniquified && \
-							  (v)->val.array.elemsUniquified : true)
+	 (v)->type == jbvArray ?  (v)->val.array.rawScalar || \
+							  ((v)->val.array.uniquified && \
+							   (v)->val.array.elemsUniquified) : true)
 
 
 /*

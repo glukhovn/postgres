@@ -276,6 +276,41 @@ JsonGetUniquified(Json *json)
 	return JsonIsUniquified(json) ? json : JsonUniquify(json);
 }
 
+static inline void
+JsonValueInitObject(JsonValue *val, int nPairs, int nPairsAllocated,
+					bool uniquified)
+{
+	val->type = jbvObject;
+	val->val.object.nPairs = nPairs;
+	val->val.object.pairs = nPairsAllocated ?
+							palloc(sizeof(JsonPair) * nPairsAllocated) : NULL;
+	val->val.object.uniquified = uniquified;
+	val->val.object.valuesUniquified = uniquified;
+	val->val.object.fieldSeparator = ' ';
+	val->val.object.braceSeparator = 0;
+	val->val.object.colonSeparator.before = 0;
+	val->val.object.colonSeparator.after = ' ';
+}
+
+static inline void
+JsonValueInitArray(JsonValue *val, int nElems, int nElemsAllocated,
+				   bool rawScalar, bool uniquified)
+{
+	val->type = jbvArray;
+	val->val.array.nElems = nElems;
+	val->val.array.elems = nElemsAllocated ?
+							palloc(sizeof(JsonValue) * nElemsAllocated) : NULL;
+	val->val.array.rawScalar = rawScalar;
+	if (!rawScalar)
+	{
+		val->val.array.uniquified = uniquified;
+		val->val.array.elemsUniquified = uniquified;
+		val->val.array.elementSeparator[0] = ' ';
+		val->val.array.elementSeparator[1] = 0;
+		val->val.array.elementSeparator[2] = 0;
+	}
+}
+
 extern Json *JsonValueToJson(JsonValue *val);
 extern JsonValue *JsonToJsonValue(Json *json, JsonValue *jv);
 extern JsonValue *JsonValueUnpackBinary(const JsonValue *jbv);

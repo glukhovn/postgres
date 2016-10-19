@@ -2801,15 +2801,8 @@ recurse:
 	switch (it->state)
 	{
 		case JTI_ARRAY_START:
-			val->type = jbvArray;
-			val->val.array.nElems = it->ji.container->size;
-			val->val.array.rawScalar = it->isScalar;
-			val->val.array.elems = NULL;
-			val->val.array.uniquified = false;
-			val->val.array.elemsUniquified = false;
-			val->val.array.elementSeparator[0] = ' ';
-			val->val.array.elementSeparator[1] = 0;
-			val->val.array.elementSeparator[2] = 0;
+			JsonValueInitArray(val, it->ji.container->size, 0, it->isScalar,
+							   false);
 			it->state = it->isScalar ? JTI_ARRAY_ELEM_SCALAR : JTI_ARRAY_ELEM;
 			return WJB_BEGIN_ARRAY;
 
@@ -2854,15 +2847,7 @@ recurse:
 			return WJB_ELEM;
 
 		case JTI_OBJECT_START:
-			val->type = jbvObject;
-			val->val.object.nPairs = -1;
-			val->val.object.pairs = NULL;
-			val->val.object.uniquified = false;
-			val->val.object.valuesUniquified = false;
-			val->val.object.fieldSeparator = ' ';
-			val->val.object.braceSeparator = 0;
-			val->val.object.colonSeparator.before = 0;
-			val->val.object.colonSeparator.after = ' ';
+			JsonValueInitObject(val, -1, 0, false);
 			it->state = JTI_OBJECT_KEY;
 			return WJB_BEGIN_OBJECT;
 
