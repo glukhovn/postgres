@@ -864,8 +864,9 @@ recurse:
 			 * v->val.array.elems is not actually set, because we aren't doing
 			 * a full conversion
 			 */
-			JsonValueInitArray(val, it->childrenSize > 0 ? -1 : 0, 0,
-							   it->isScalar, true);
+			JsonValueInitArray(val,
+							   it->childrenSize > 0 ? it->isScalar ? 1 : -1 : 0,
+							   0, it->isScalar, true);
 
 			it->childrenPtr = it->children;
 			it->curDataOffset = 0;

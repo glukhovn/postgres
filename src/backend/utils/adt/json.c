@@ -2801,7 +2801,8 @@ recurse:
 	switch (it->state)
 	{
 		case JTI_ARRAY_START:
-			JsonValueInitArray(val, -1, 0, it->isScalar, false);
+			JsonValueInitArray(val, it->isScalar ? 1 : -1, 0, it->isScalar,
+							   false);
 			it->state = it->isScalar ? JTI_ARRAY_ELEM_SCALAR : JTI_ARRAY_ELEM;
 			return WJB_BEGIN_ARRAY;
 
