@@ -407,8 +407,10 @@ JsonCacheSwitchTo2(void **data, MemoryContext mcxt)
 static inline JsonCacheContext
 JsonCacheSwitchToFunc(FunctionCallInfo fcinfo)
 {
-	JsonCacheContext newcxt = { (JsonCacheData **) &fcinfo->flinfo->fn_extra,
-								fcinfo->flinfo->fn_mcxt };
+	JsonCacheContext newcxt = {
+		fcinfo->flinfo ? (JsonCacheData **) &fcinfo->flinfo->fn_extra : NULL,
+		fcinfo->flinfo ? fcinfo->flinfo->fn_mcxt : NULL
+	};
 	return JsonCacheSwitchTo(newcxt);
 }
 
