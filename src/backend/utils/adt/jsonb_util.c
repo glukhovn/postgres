@@ -677,6 +677,13 @@ pushJsonbValueExt(JsonbParseState **pstate, JsonbIteratorToken seq,
 		return pushJsonbValueScalar(pstate, seq, jbval);
 	}
 
+	if (*pstate && JsonContainerIsScalar(jbval->val.binary.data))
+	{
+		jbval = JsonExtractScalar(jbval->val.binary.data, &v);
+		Assert(IsAJsonbScalar(jbval));
+		return pushJsonbValueScalar(pstate, seq, jbval);
+	}
+
 	/* unpack the binary and add each piece to the pstate */
 	it = JsonIteratorInit(jbval->val.binary.data);
 	while ((tok = JsonIteratorNext(&it, &v, false)) != WJB_DONE)
