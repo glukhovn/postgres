@@ -763,14 +763,13 @@ jsonbcFillValue(JEntry entry, const char *base, uint32 offset,
 	}
 	else
 	{
+		JsonContainerData *cont = JsonContainerAlloc();
 		Assert(JBE_ISCONTAINER(entry));
-		result->type = jbvBinary;
-		result->val.binary.data = JsonContainerAlloc();
-		jsonbcInitContainer((JsonContainerData *) result->val.binary.data,
+		jsonbcInitContainer(cont,
 							(JsonbcContainer *)(base + offset),
 							JBE_LENGTH(entry),
 							dictId);
-		result->val.binary.uniquified = true;
+		JsonValueInitBinary(result, cont);
 	}
 }
 

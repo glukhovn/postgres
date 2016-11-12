@@ -603,15 +603,14 @@ fillJsonbValue(const JsonbContainer *container, int index,
 	}
 	else
 	{
+		JsonContainerData *cont = JsonContainerAlloc();
 		Assert(JBE_ISCONTAINER(entry));
-		result->type = jbvBinary;
-		result->val.binary.data = JsonContainerAlloc();
-		jsonbInitContainer((JsonContainerData *) result->val.binary.data,
+		jsonbInitContainer(cont,
 				/* Remove alignment padding from data pointer and length */
 						   (JsonbContainer *)(base_addr + INTALIGN(offset)),
 						   getJsonbLength(container, index) -
 								(INTALIGN(offset) - offset));
-		result->val.binary.uniquified = true;
+		JsonValueInitBinary(result, cont);
 	}
 }
 
