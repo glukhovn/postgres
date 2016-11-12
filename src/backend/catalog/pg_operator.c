@@ -256,6 +256,7 @@ OperatorShellMake(const char *operatorName,
 	values[Anum_pg_operator_oprcode - 1] = ObjectIdGetDatum(InvalidOid);
 	values[Anum_pg_operator_oprrest - 1] = ObjectIdGetDatum(InvalidOid);
 	values[Anum_pg_operator_oprjoin - 1] = ObjectIdGetDatum(InvalidOid);
+	values[Anum_pg_operator_oprstat - 1] = ObjectIdGetDatum(InvalidOid);
 
 	/*
 	 * create a new operator tuple
@@ -333,6 +334,7 @@ OperatorCreate(const char *operatorName,
 			   List *negatorName,
 			   Oid restrictionId,
 			   Oid joinId,
+			   Oid statsId,
 			   bool canMerge,
 			   bool canHash)
 {
@@ -505,6 +507,7 @@ OperatorCreate(const char *operatorName,
 	values[Anum_pg_operator_oprcode - 1] = ObjectIdGetDatum(procedureId);
 	values[Anum_pg_operator_oprrest - 1] = ObjectIdGetDatum(restrictionId);
 	values[Anum_pg_operator_oprjoin - 1] = ObjectIdGetDatum(joinId);
+	values[Anum_pg_operator_oprstat - 1] = ObjectIdGetDatum(statsId);
 
 	pg_operator_desc = table_open(OperatorRelationId, RowExclusiveLock);
 
@@ -859,6 +862,13 @@ makeOperatorDependencies(HeapTuple tuple, bool isUpdate)
 		referenced.classId = ProcedureRelationId;
 		referenced.objectId = oper->oprjoin;
 		referenced.objectSubId = 0;
+		recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
+	}
+
+	/* Dependency on statistics estimation function */
+	if (OidIsValid(oper->oprstat))
+	{
+		ObjectAddressSet(referenced, ProcedureRelationId, oper->oprstat);
 		recordDependencyOn(&myself, &referenced, DEPENDENCY_NORMAL);
 	}
 
