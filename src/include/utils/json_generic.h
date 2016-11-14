@@ -499,7 +499,7 @@ typedef struct JsonCacheContext
 	MemoryContext		mcxt;
 } JsonCacheContext;
 
-extern JsonCacheContext JsonCache;
+extern PGDLLIMPORT JsonCacheContext JsonCache;
 
 static inline JsonCacheContext
 JsonCacheSwitchTo(JsonCacheContext newcxt)
