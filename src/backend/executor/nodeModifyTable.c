@@ -1539,8 +1539,6 @@ ExecModifyTable(ModifyTableState *node)
 
 	node->mt_done = true;
 
-	MemoryContextStats(TopMemoryContext);
-
 	return NULL;
 }
 
