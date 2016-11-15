@@ -277,7 +277,7 @@ JsonGetUniquified(Json *json)
 	return JsonIsUniquified(json) ? json : JsonUniquify(json);
 }
 
-static inline void
+static inline JsonValue *
 JsonValueInitObject(JsonValue *val, int nPairs, int nPairsAllocated,
 					bool uniquified)
 {
@@ -291,9 +291,11 @@ JsonValueInitObject(JsonValue *val, int nPairs, int nPairsAllocated,
 	val->val.object.braceSeparator = 0;
 	val->val.object.colonSeparator.before = 0;
 	val->val.object.colonSeparator.after = ' ';
+
+	return val;
 }
 
-static inline void
+static inline JsonValue *
 JsonValueInitArray(JsonValue *val, int nElems, int nElemsAllocated,
 				   bool rawScalar, bool uniquified)
 {
@@ -310,6 +312,8 @@ JsonValueInitArray(JsonValue *val, int nElems, int nElemsAllocated,
 		val->val.array.elementSeparator[1] = 0;
 		val->val.array.elementSeparator[2] = 0;
 	}
+
+	return val;
 }
 
 static inline JsonValue *
