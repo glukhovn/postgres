@@ -6,11 +6,11 @@
  */
 
 #include "postgres.h"
-#include "jsonbc_dict.h"
 #include "catalog/pg_type.h"
 #include "executor/spi.h"
 #include "utils/builtins.h"
 #include "utils/json_generic.h"
+#include "utils/jsonbc_dict.h"
 #include "utils/memutils.h"
 #ifdef JSONBC_DICT_SYSCACHE
 #include "access/htup_details.h"

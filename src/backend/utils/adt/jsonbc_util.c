@@ -24,9 +24,9 @@
 #include "utils/builtins.h"
 #include "utils/jsonb.h"
 #include "utils/json_generic.h"
+#include "utils/jsonbc_dict.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
-#include "jsonbc_dict.h"
 
 /* flags for the header-field in JsonbcContainer */
 #define JBC_CSHIFT				2
