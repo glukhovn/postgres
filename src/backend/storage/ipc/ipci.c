@@ -43,6 +43,7 @@
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
 #include "storage/spin.h"
+#include "utils/jsonbc_dict.h"
 #include "utils/snapmgr.h"
 
 
@@ -253,6 +254,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	BTreeShmemInit();
 	SyncScanShmemInit();
 	AsyncShmemInit();
+	JsonbcDictWorkerShmemInit();
 
 #ifdef EXEC_BACKEND
 

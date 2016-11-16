@@ -36,12 +36,8 @@
 #define JSONBC_DICT_TAB "pg_jsonbc_dict"
 
 #ifdef JSONBC_DICT_SYSCACHE
-
-static JsonbcKeyId
-jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name);
-
-static JsonbcKeyId
-jsonbcDictGetIdByNameSeq(JsonbcDictId dict, JsonbcKeyName name, bool insert)
+JsonbcKeyId
+jsonbcDictGetIdByNameSeqCached(JsonbcDictId dict, JsonbcKeyName name)
 {
 	text	   *txt = cstring_to_text_with_len(name.s, name.len);
 	HeapTuple	tuple = SearchSysCache2(JSONBCDICTNAME,
@@ -49,12 +45,23 @@ jsonbcDictGetIdByNameSeq(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 										PointerGetDatum(txt));
 	JsonbcKeyId	id;
 
-	if (HeapTupleIsValid(tuple))
-	{
-		id = ((Form_pg_jsonbc_dict) GETSTRUCT(tuple))->id;
-		ReleaseSysCache(tuple);
-	}
-	else if (insert)
+	pfree(txt);
+
+	if (!HeapTupleIsValid(tuple))
+		return JsonbcInvalidKeyId;
+
+	id = ((Form_pg_jsonbc_dict) GETSTRUCT(tuple))->id;
+	ReleaseSysCache(tuple);
+
+	return id;
+}
+
+static JsonbcKeyId
+jsonbcDictGetIdByNameSeq(JsonbcDictId dict, JsonbcKeyName name, bool insert)
+{
+	JsonbcKeyId	id = jsonbcDictGetIdByNameSeqCached(dict, name);
+
+	if (id == JsonbcInvalidKeyId && insert)
 	{
 #ifndef JSONBC_DICT_UPSERT
 		Datum		values[Natts_pg_jsonbc_dict];
@@ -80,13 +87,15 @@ jsonbcDictGetIdByNameSeq(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 
 		heap_freetuple(tuple);
 #else
-		id = jsonbcDictGetIdByNameSlow(dict, name);
+		JsonbcKeyId nextKeyId = (JsonbcKeyId) nextval_internal(dict);
+
+# ifndef JSONBC_DICT_NO_WORKER
+		id = jsonbcDictWorkerGetIdByName(dict, name, nextKeyId);
+# else
+		id = jsonbcDictGetIdByNameSlow(dict, name, nextKeyId);
+# endif
 #endif
 	}
-	else
-		id = JsonbcInvalidKeyId;
-
-	pfree(txt);
 
 	return id;
 }
@@ -305,8 +314,9 @@ jsonbcDictAddEntry(JsonbcDictId dict, JsonbcKeyId id, JsonbcKeyName name)
 #if !defined(JSONBC_DICT_SYSCACHE) || defined(JSONBC_DICT_UPSERT)
 static SPIPlanPtr savedPlanInsert = NULL;
 
-static JsonbcKeyId
-jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
+JsonbcKeyId
+jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name,
+						  JsonbcKeyId nextKeyId)
 {
 #ifdef JSONBC_DICT_SEQUENCES
 	Oid		argTypes[3] = {JsonbcDictIdTypeOid, TEXTOID, JsonbcKeyIdTypeOid};
@@ -360,7 +370,7 @@ jsonbcDictGetIdByNameSlow(JsonbcDictId dict, JsonbcKeyName name)
 	args[0] = JsonbcDictIdGetDatum(dict);
 	args[1] = PointerGetDatum(cstring_to_text_with_len(name.s, name.len));
 #ifdef JSONBC_DICT_SEQUENCES
-	args[2] = JsonbcKeyIdGetDatum((JsonbcKeyId) nextval_internal(dict));
+	args[2] = JsonbcKeyIdGetDatum(nextKeyId);
 #endif
 
 	if (SPI_execute_plan(savedPlanInsert, args, NULL, false, 1) < 0 ||
@@ -395,7 +405,7 @@ jsonbcDictGetIdByName(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 										(const void *) &nameToIdKey,
 										HASH_FIND, &found);
 
-	return found ? nameToId->id : jsonbcDictGetIdByNameSlow(dict, name);
+	return found ? nameToId->id : jsonbcDictGetIdByNameSlow(dict, name, 0);
 }
 
 static JsonbcKeyName
