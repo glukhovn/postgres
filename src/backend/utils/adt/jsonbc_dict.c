@@ -17,6 +17,7 @@
 #include "catalog/indexing.h"
 #include "catalog/pg_jsonbc_dict.h"
 #include "catalog/pg_enum.h"
+#include "utils/catcache.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
 #else
@@ -54,6 +55,20 @@ jsonbcDictGetIdByNameSeqCached(JsonbcDictId dict, JsonbcKeyName name)
 	ReleaseSysCache(tuple);
 
 	return id;
+}
+
+static void
+jsonbcDictInvalidateCache(JsonbcDictId dict, JsonbcKeyName name)
+{
+	text	   *txt = cstring_to_text_with_len(name.s, name.len);
+	uint32		hash = GetSysCacheHashValue(JSONBCDICTNAME,
+											JsonbcDictIdGetDatum(dict),
+											PointerGetDatum(txt),
+											PointerGetDatum(NULL),
+											PointerGetDatum(NULL));
+	pfree(txt);
+
+	CatalogCacheIdInvalidate(JSONBCDICTNAME, hash);
 }
 
 static JsonbcKeyId
@@ -94,6 +109,7 @@ jsonbcDictGetIdByNameSeq(JsonbcDictId dict, JsonbcKeyName name, bool insert)
 # else
 		id = jsonbcDictGetIdByNameSlow(dict, name, nextKeyId);
 # endif
+		jsonbcDictInvalidateCache(dict, name);
 #endif
 	}
 
