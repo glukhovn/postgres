@@ -26,6 +26,7 @@
 typedef struct JsonbcDictWorker
 {
 	Oid					dbid;
+	bool				started;
 
 	Latch		   		workerLatch;
 	Latch			   	backendLatch;
@@ -242,13 +243,16 @@ jsonbcDictWorkerStart(Oid dbid)
 
 	wrk = hash_search(jsonbcDictWorkers, &dbid, HASH_ENTER, &found);
 
-	if (found)
+	if (found && wrk->started)
 		return wrk;
 
-	elog(INFO, "starting jsonbc dictionary background worker for DB %d", dbid);
+	if (!found)
+	{
+		InitSharedLatch(&wrk->workerLatch);
+		InitSharedLatch(&wrk->backendLatch);
+	}
 
-	InitSharedLatch(&wrk->workerLatch);
-	InitSharedLatch(&wrk->backendLatch);
+	elog(INFO, "starting jsonbc dictionary background worker for DB %d", dbid);
 
 	/* We might be running in a short-lived memory context. */
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
@@ -266,26 +270,36 @@ jsonbcDictWorkerStart(Oid dbid)
 	OwnLatch(&wrk->backendLatch);
 	ResetLatch(&wrk->backendLatch);
 
-	if (!RegisterDynamicBackgroundWorker(&bgworker, &bgwhandle))
-		elog(ERROR, "failed to register jsonbc dictionary worker");
+	PG_TRY();
+	{
+		if (!RegisterDynamicBackgroundWorker(&bgworker, &bgwhandle))
+			elog(ERROR, "failed to register jsonbc dictionary worker");
 
+		status = WaitForBackgroundWorkerStartup(bgwhandle, &pid);
 
-	status = WaitForBackgroundWorkerStartup(bgwhandle, &pid);
+		if (status == BGWH_STOPPED)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+					 errmsg("could not start background process"),
+				   errhint("More details may be available in the server log.")));
+		if (status == BGWH_POSTMASTER_DIED)
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				  errmsg("cannot start background processes without postmaster"),
+					 errhint("Kill all remaining database processes and restart the database.")));
+		Assert(status == BGWH_STARTED);
 
-	if (status == BGWH_STOPPED)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
-				 errmsg("could not start background process"),
-			   errhint("More details may be available in the server log.")));
-	if (status == BGWH_POSTMASTER_DIED)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
-			  errmsg("cannot start background processes without postmaster"),
-				 errhint("Kill all remaining database processes and restart the database.")));
-	Assert(status == BGWH_STARTED);
+		wrk->started = true; /* FIXME use BackgroundWorkerHandle */
 
-	rc = WaitLatch(&wrk->backendLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
-	DisownLatch(&wrk->backendLatch);
+		rc = WaitLatch(&wrk->backendLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
+		DisownLatch(&wrk->backendLatch);
+	}
+	PG_CATCH();
+	{
+		DisownLatch(&wrk->backendLatch);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	if (rc & WL_POSTMASTER_DEATH)
 		ereport(ERROR,
@@ -328,25 +342,34 @@ jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
 
 	OwnLatch(&wrk->backendLatch);
 
-	wrk->request.dict = dict;
-	wrk->request.nextKeyId = nextKeyId;
-	wrk->request.keymq = shm_mq_create(wrk->mqbuf, sizeof(wrk->mqbuf));
+	PG_TRY();
+	{
+		wrk->request.dict = dict;
+		wrk->request.nextKeyId = nextKeyId;
+		wrk->request.keymq = shm_mq_create(wrk->mqbuf, sizeof(wrk->mqbuf));
 
-	ResetLatch(&wrk->backendLatch);
-	SetLatch(&wrk->workerLatch);
+		ResetLatch(&wrk->backendLatch);
+		SetLatch(&wrk->workerLatch);
 
-	jsonbcDictWorkerSendString(wrk->request.keymq, key.s, key.len);
+		jsonbcDictWorkerSendString(wrk->request.keymq, key.s, key.len);
 
-	(void) WaitLatch(&wrk->backendLatch, WL_LATCH_SET, 0);
+		(void) WaitLatch(&wrk->backendLatch, WL_LATCH_SET, 0);
 
-	result = wrk->response.id;
+		result = wrk->response.id;
 
-	elog(INFO, "received response from jsonbc worker: %d", result);
+		elog(INFO, "received response from jsonbc worker: %d", result);
 
-	if (result == JsonbcInvalidKeyId)
-		errmsg = jsonbcDictWorkerReceiveString(wrk->response.errmq, &errmsglen);
+		if (result == JsonbcInvalidKeyId)
+			errmsg = jsonbcDictWorkerReceiveString(wrk->response.errmq, &errmsglen);
 
-	DisownLatch(&wrk->backendLatch);
+		DisownLatch(&wrk->backendLatch);
+	}
+	PG_CATCH();
+	{
+		DisownLatch(&wrk->backendLatch);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	LockRelease(&tag, ExclusiveLock, false);
 
