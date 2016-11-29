@@ -596,6 +596,7 @@ intorel_receive(TupleTableSlot *slot, DestReceiver *self)
 	if (myState->rel->rd_rel->relhasoids)
 		HeapTupleSetOid(tuple, InvalidOid);
 
+	/* FIXME memleaks */
 	heap_insert(myState->rel,
 				tuple,
 				slot->tts_tupleDescriptor,

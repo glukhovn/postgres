@@ -478,6 +478,7 @@ transientrel_receive(TupleTableSlot *slot, DestReceiver *self)
 	 */
 	tuple = ExecMaterializeSlot(slot);
 
+	/* FIXME memleaks */
 	heap_insert(myState->transientrel,
 				tuple,
 				slot->tts_tupleDescriptor,
