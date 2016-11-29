@@ -697,6 +697,7 @@ JsonToJsonValue(Json *json, JsonValue *jv)
 extern JsonContainerOps jsontContainerOps;
 extern JsonContainerOps jsonbContainerOps;
 extern JsonContainerOps jsonbcContainerOps;
+extern JsonContainerOps bsonContainerOps;
 
 typedef enum
 {
@@ -704,6 +705,7 @@ typedef enum
 	JsonContainerJsont,
 	JsonContainerJsonb,
 	JsonContainerJsonbc,
+	JsonContainerBson,
 } JsonContainerType;
 
 typedef struct varatt_extended_json
@@ -726,12 +728,14 @@ jsonGetExtendedSize(JsonContainer *jc)
 	((jc)->ops == &jsontContainerOps  ? JsonContainerJsont : \
 	 (jc)->ops == &jsonbContainerOps  ? JsonContainerJsonb : \
 	 (jc)->ops == &jsonbcContainerOps ? JsonContainerJsonbc : \
+	 (jc)->ops == &bsonContainerOps   ? JsonContainerBson : \
 										JsonContainerUnknown)
 
 #define JsonContainerGetOpsByType(type) \
 		((type) == JsonContainerJsont ? &jsontContainerOps : \
 		 (type) == JsonContainerJsonb ? &jsonbContainerOps : \
-		 (type) == JsonContainerJsonbc ? &jsonbcContainerOps : NULL)
+		 (type) == JsonContainerJsonbc ? &jsonbcContainerOps : \
+		 (type) == JsonContainerBson ? &bsonContainerOps : NULL)
 
 static void
 jsonWriteExtended(JsonContainer *jc, void *ptr, Size allocated_size)

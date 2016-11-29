@@ -4491,6 +4491,8 @@ DATA(insert OID = 3375 (  jsonb_handler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 
 DESCR("json to jsonb compression method handler");
 DATA(insert OID = 3376 (  jsonbc_handler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	jsonbc_handler _null_ _null_ _null_ ));
 DESCR("json to jsonbc compression method handler");
+DATA(insert OID = 3381 (  bson_handler		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3372 "2281" _null_ _null_ _null_ _null_ _null_	bson_handler _null_ _null_ _null_ ));
+DESCR("json to bson compression method handler");
 
 
 /* enum related procs */

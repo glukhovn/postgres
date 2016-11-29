@@ -107,20 +107,23 @@ struct NumericData
 bool
 numeric_get_small(Numeric value, uint32 *out)
 {
-	int weight, i, ndigits;
-	NumericDigit *digits;
-	uint32	result;
+	NumericDigit   *digits;
+	uint32			result;
+	int				weight,
+					ndigits,
+					i;
 
 	if (NUMERIC_SIGN(value) == NUMERIC_NAN)
 		return false;
 
 	if (NUMERIC_DSCALE(value) != 0)
 		return false;
+
 	weight = NUMERIC_WEIGHT(value);
 	if (weight > 2)
 		return false;
-	digits = NUMERIC_DIGITS(value);
 
+	digits = NUMERIC_DIGITS(value);
 	if (weight == 2 && digits[0] > 20)
 		return false;
 
@@ -133,10 +136,8 @@ numeric_get_small(Numeric value, uint32 *out)
 			result += digits[i];
 	}
 
-	result <<= 1;
-
 	if (NUMERIC_SIGN(value) == NUMERIC_NEG)
-		result |= 1;
+		result = -result;
 
 	*out = result;
 
@@ -146,37 +147,31 @@ numeric_get_small(Numeric value, uint32 *out)
 Numeric
 small_to_numeric(uint32 value)
 {
-	Size		len;
-	Numeric		result;
-	bool		sign;
-	NumericDigit digits[3] = {0, 0, 0};
-	int			weight;
+	NumericDigit	digits[3];
+	Numeric			result;
+	Size			len;
+	int				weight;
+	bool			sign;
 
-	sign = (value & 1) == 1;
-	value >>= 1;
+	sign = (int32) value < 0;
+	if (sign)
+		value = -value;
 
 	digits[0] = (value / NBASE / NBASE) % NBASE;
 	digits[1] = (value / NBASE) % NBASE;
 	digits[2] = value % NBASE;
 
-	weight = 2;
-	if (digits[0] == 0)
-	{
-		if (digits[1] == 0)
-			weight = 0;
-		else
-			weight = 1;
-	}
+	weight = digits[0] ? 2 : digits[1] ? 1 : 0;
 
 	len = NUMERIC_HDRSZ_SHORT + (weight + 1) * sizeof(NumericDigit);
 	result = (Numeric) palloc(len);
 	SET_VARSIZE(result, len);
 	result->choice.n_short.n_header =
-		(sign ? (NUMERIC_SHORT | NUMERIC_SHORT_SIGN_MASK)
-		 : NUMERIC_SHORT)
-		| (weight & NUMERIC_SHORT_WEIGHT_MASK);
+		(sign ? NUMERIC_SHORT | NUMERIC_SHORT_SIGN_MASK : NUMERIC_SHORT) |
+		(weight & NUMERIC_SHORT_WEIGHT_MASK);
 
-	memcpy(NUMERIC_DIGITS(result), digits + (2 - weight), (weight + 1) * sizeof(NumericDigit));
+	memcpy(NUMERIC_DIGITS(result), digits + (2 - weight),
+		   (weight + 1) * sizeof(NumericDigit));
 
 	return result;
 }
