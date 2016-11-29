@@ -2144,6 +2144,7 @@ jsonbCompressJsont(Datum value, CompressionOptions options)
 	Json	   *json = DatumGetJsont(value);
 	JsonValue	jv;
 	Jsonb	   *jb = JsonValueToJsonb(JsonToJsonValue(json, &jv));
+	JsonFreeIfCopy(json, value);
 #endif
 	return PointerGetDatum(jb);
 }
@@ -2157,6 +2158,7 @@ jsonbCompressJsonb(Datum value, CompressionOptions options)
 	Json	   *json = DatumGetJsonb(value);
 	JsonValue	jv;
 	Jsonb	   *jb = JsonValueToJsonb(JsonToJsonValue(json, &jv));
+	JsonFreeIfCopy(json, value);
 #endif
 	return PointerGetDatum(jb);
 }

@@ -1412,7 +1412,10 @@ static Datum
 jsonbcCompressJsont(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
-	return jsonbcCompress(DatumGetJsont(value), options);
+	Json   *json = DatumGetJsont(value);
+	Datum	res = jsonbcCompress(json, options);
+	JsonFreeIfCopy(json, value);
+	return res;
 #else
 	return jsonbcCompress(value, options);
 #endif
@@ -1422,7 +1425,10 @@ static Datum
 jsonbcCompressJsonb(Datum value, CompressionOptions options)
 {
 #ifndef JSON_FULL_DECOMPRESSION
-	return jsonbcCompress(DatumGetJsonb(value), options);
+	Json   *json = DatumGetJsonb(value);
+	Datum	res = jsonbcCompress(json, options);
+	JsonFreeIfCopy(json, value);
+	return res;
 #else
 	return jsonbcCompress(value, options);
 #endif

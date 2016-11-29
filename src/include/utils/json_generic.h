@@ -128,14 +128,16 @@ typedef struct Json
 #undef	PG_GETARG_JSONB
 #define PG_GETARG_JSONB(n)			PG_GETARG_JSONB_TMP(n, alloca(sizeof(Json)))
 
-#define PG_FREE_IF_COPY_JSONB(json, n) \
-	do { \
-		if (!VARATT_IS_EXTERNAL_EXPANDED(PG_GETARG_POINTER(n))) \
-			JsonFree(json); \
-		else \
-			Assert(DatumGetEOHP(PG_GETARG_DATUM(n)) == &(json)->obj.eoh); \
-	} while (0)
+#define JsonFreeIfCopy(json, datum) \
+		do { \
+			if (!VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(datum))) \
+				JsonFree(json); \
+			else \
+				Assert(DatumGetEOHP(PG_GETARG_DATUM(n)) == &(json)->obj.eoh); \
+		} while (0)
 
+#define PG_FREE_IF_COPY_JSONB(json, n) \
+		JsonFreeIfCopy(json, PG_GETARG_DATUM(n))
 
 #define JsonRoot(json)				(&(json)->root)
 #define JsonGetSize(json)			(JsonRoot(json)->len)
