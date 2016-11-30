@@ -353,6 +353,7 @@ extern Datum jsonb_out(PG_FUNCTION_ARGS);
 extern Datum jsonb_recv(PG_FUNCTION_ARGS);
 extern Datum jsonb_send(PG_FUNCTION_ARGS);
 extern Datum jsonb_typeof(PG_FUNCTION_ARGS);
+extern Datum jsonb_to_json(PG_FUNCTION_ARGS);
 
 /* generator routines */
 extern Datum to_jsonb(PG_FUNCTION_ARGS);
