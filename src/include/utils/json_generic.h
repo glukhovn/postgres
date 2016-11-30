@@ -110,8 +110,8 @@ typedef struct Json
 #define DatumGetJsonx(datum) \
 		DatumGetJson(datum, JsonxContainerOps, NULL, NULL)
 
-#define DatumGetJsonbTmp(datum,tmp)	\
-		DatumGetJson(datum, &jsonbContainerOps, NULL, tmp)
+#define DatumGetJsonxTmp(datum, tmp) \
+		DatumGetJson(datum, JsonxContainerOps, NULL, tmp)
 
 #define JsonIsUniquified(json) ( \
 		JsonRoot(json)->ops == &jsontContainerOps ? false : \
@@ -129,13 +129,11 @@ typedef struct Json
 # define JsonbGetDatum(json)		JsonGetDatum(JsonGetUniquified(json))
 #endif
 
-#define PG_GETARG_JSONB_TMP(n, tmp)	DatumGetJsonbTmp(PG_GETARG_DATUM(n), tmp)
+
+#define PG_GETARG_JSONX_TMP(n, tmp)	DatumGetJsonxTmp(PG_GETARG_DATUM(n), tmp)
 
 #undef	PG_GETARG_JSONB
-#define PG_GETARG_JSONB(n)			PG_GETARG_JSONB_TMP(n, alloca(sizeof(Json)))
-
-#undef	PG_GETARG_JSONB
-#define PG_GETARG_JSONB(n)			DatumGetJsonx(PG_GETARG_DATUM(n))
+#define PG_GETARG_JSONB(n)			PG_GETARG_JSONX_TMP(n, alloca(sizeof(Json)))
 
 #define JsonFreeIfCopy(json, datum) \
 		do { \
