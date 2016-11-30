@@ -63,6 +63,7 @@
 #define jsonb_to_recordset			json_to_recordset
 
 #define JsonxContainerOps			(&jsontContainerOps)
+#define JsonxGetUniquified(json)	(json)
 
 #include "postgres.h"
 

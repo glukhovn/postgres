@@ -19,7 +19,8 @@
 #define gin_triconsistent_jsonb_path	gin_triconsistent_json_path
 
 #define JsonxContainerOps				(&jsontContainerOps)
-#include "utils/json_generic.h"
+#define JsonxGetUniquified(json)		(json)
 
+#include "utils/json_generic.h"
 
 #include "jsonb_gin.c"

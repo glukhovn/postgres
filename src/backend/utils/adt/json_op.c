@@ -23,7 +23,8 @@
 #define jsonb_hash			json_hash
 
 #define JsonxContainerOps			(&jsontContainerOps)
-#include "utils/json_generic.h"
+#define JsonxGetUniquified(json)	(json)
 
+#include "utils/json_generic.h"
 
 #include "jsonb_op.c"

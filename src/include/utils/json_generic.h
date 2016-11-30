@@ -119,16 +119,16 @@ typedef struct Json
 			JsonValueIsUniquified((JsonValue *) JsonRoot(json)->data) : true \
 	)
 
-#undef JsonbGetDatum
 #ifndef JsonxContainerOps
 # define JsonxContainerOps			(&jsonbContainerOps)
 #endif
-#ifdef JSON_C
-# define JsonbGetDatum(json)		JsonGetDatum(json)
-#else
-# define JsonbGetDatum(json)		JsonGetDatum(JsonGetUniquified(json))
+
+#ifndef JsonxGetUniquified
+# define JsonxGetUniquified(json)	JsonGetUniquified(json)
 #endif
 
+#undef JsonbGetDatum
+#define JsonbGetDatum(json)			JsonGetDatum(JsonxGetUniquified(json))
 
 #define PG_GETARG_JSONX_TMP(n, tmp)	DatumGetJsonxTmp(PG_GETARG_DATUM(n), tmp)
 
