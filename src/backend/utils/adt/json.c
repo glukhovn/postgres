@@ -62,6 +62,8 @@
 #define jsonb_to_record				json_to_record
 #define jsonb_to_recordset			json_to_recordset
 
+#define JsonxContainerOps			(&jsontContainerOps)
+
 #include "postgres.h"
 
 #include "access/compression.h"
@@ -2588,9 +2590,6 @@ json_typeof(PG_FUNCTION_ARGS)
 }
 
 #endif
-
-#undef PG_GETARG_JSONB
-#define PG_GETARG_JSONB(x)	DatumGetJsont(PG_GETARG_DATUM(x))
 
 #include "jsonb.c"
 #include "jsonfuncs.c"
