@@ -18,9 +18,8 @@
 #define gin_consistent_jsonb_path		gin_consistent_json_path
 #define gin_triconsistent_jsonb_path	gin_triconsistent_json_path
 
+#define JsonxContainerOps				(&jsontContainerOps)
 #include "utils/json_generic.h"
 
-#undef PG_GETARG_JSONB
-#define PG_GETARG_JSONB(x)	DatumGetJsont(PG_GETARG_DATUM(x))
 
 #include "jsonb_gin.c"

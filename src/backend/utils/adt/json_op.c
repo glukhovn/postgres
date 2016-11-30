@@ -22,9 +22,8 @@
 #define jsonb_cmp			json_cmp
 #define jsonb_hash			json_hash
 
+#define JsonxContainerOps			(&jsontContainerOps)
 #include "utils/json_generic.h"
 
-#undef PG_GETARG_JSONB
-#define PG_GETARG_JSONB(x)	DatumGetJsont(PG_GETARG_DATUM(x))
 
 #include "jsonb_op.c"
