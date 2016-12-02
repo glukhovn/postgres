@@ -84,8 +84,8 @@
 
 #define DatumGetJsonbc(d)	((Jsonbc *) PG_DETOAST_DATUM(d))
 #define JsonbcGetDatum(p)	PointerGetDatum(p)
-#define PG_GETARG_JSONBC(x)	DatumGetJsonbc(PG_GETARG_DATUM(x))
-#define PG_RETURN_JSONBC(x)	PG_RETURN_POINTER(JsonbcGetDatum(x))
+#define PG_GETARG_JSONBC_RAW(x)	DatumGetJsonbc(PG_GETARG_DATUM(x))
+#define PG_RETURN_JSONBC_RAW(x)	PG_RETURN_POINTER(JsonbcGetDatum(x))
 
 /*
  * Key/value pair within an Object.
