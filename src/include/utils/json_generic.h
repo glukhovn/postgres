@@ -140,7 +140,7 @@ typedef struct Json
 			if (!VARATT_IS_EXTERNAL_EXPANDED(DatumGetPointer(datum))) \
 				JsonFree(json); \
 			else \
-				Assert(DatumGetEOHP(PG_GETARG_DATUM(n)) == &(json)->obj.eoh); \
+				Assert(DatumGetEOHP(datum) == &(json)->obj.eoh); \
 		} while (0)
 
 #define PG_FREE_IF_COPY_JSONB(json, n) \
