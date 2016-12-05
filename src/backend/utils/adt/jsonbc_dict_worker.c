@@ -252,7 +252,7 @@ jsonbcDictWorkerStart(Oid dbid)
 		InitSharedLatch(&wrk->backendLatch);
 	}
 
-	elog(INFO, "starting jsonbc dictionary background worker for DB %d", dbid);
+	elog(DEBUG1, "starting jsonbc dictionary background worker for DB %d", dbid);
 
 	/* We might be running in a short-lived memory context. */
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
@@ -357,7 +357,7 @@ jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
 
 		result = wrk->response.id;
 
-		elog(INFO, "received response from jsonbc worker: %d", result);
+		elog(DEBUG1, "received response from jsonbc worker: %d", result);
 
 		if (result == JsonbcInvalidKeyId)
 			errmsg = jsonbcDictWorkerReceiveString(wrk->response.errmq, &errmsglen);
