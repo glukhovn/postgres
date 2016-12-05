@@ -56,3 +56,4 @@ test: alter-table-3
 test: create-trigger
 test: async-notify
 test: timeouts
+test: jsonbc
