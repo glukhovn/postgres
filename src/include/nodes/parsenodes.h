@@ -3182,6 +3182,13 @@ typedef struct VacuumRelation
 	List	   *va_cols;		/* list of column names, or NIL for all */
 } VacuumRelation;
 
+typedef struct AnalyzeColumnOptions
+{
+	NodeTag		type;
+	char	   *column;
+	List	   *options;
+} AnalyzeColumnOptions;
+
 typedef struct VacuumStmt
 {
 	NodeTag		type;

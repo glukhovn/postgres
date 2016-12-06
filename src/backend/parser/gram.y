@@ -403,6 +403,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 				TriggerTransitions TriggerReferencing
 				publication_name_list
 				vacuum_relation_list opt_vacuum_relation_list
+				analyze_col_option_list opt_analyze_col_options
+				analyze_col_list opt_analyze_col_list
 
 %type <list>	group_by_list
 %type <node>	group_by_item empty_grouping_set rollup_clause cube_clause
@@ -586,6 +588,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <partboundspec> PartitionBoundSpec
 %type <list>		hash_partbound
 %type <defelt>		hash_partbound_elem
+
+%type <node>	analyze_col
 
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
@@ -10571,7 +10575,7 @@ opt_name_list:
 		;
 
 vacuum_relation:
-			qualified_name opt_name_list
+			qualified_name opt_analyze_col_list
 				{
 					$$ = (Node *) makeVacuumRelation($1, InvalidOid, $2);
 				}
@@ -10589,6 +10593,35 @@ opt_vacuum_relation_list:
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
+analyze_col_option_list:
+		Sconst										{ $$ = list_make1($1); }
+		| analyze_col_option_list ',' Sconst		{ $$ = lappend($1, $3); }
+	;
+
+opt_analyze_col_options:
+			'(' analyze_col_option_list ')'			{ $$ = $2; }
+			| /*EMPTY*/								{ $$ = NULL; }
+	;
+
+analyze_col:
+			name opt_analyze_col_options
+				{
+					AnalyzeColumnOptions *n = makeNode(AnalyzeColumnOptions);
+					n->column = $1;
+					n->options = $2;
+					$$ = (Node *) n;
+				}
+		;
+
+analyze_col_list:
+			analyze_col								{ $$ = list_make1($1); }
+			| analyze_col_list ',' analyze_col		{ $$ = lappend($1, $3); }
+		;
+
+opt_analyze_col_list:
+			'(' analyze_col_list ')'				{ $$ = $2; }
+			| /*EMPTY*/								{ $$ = NIL; }
+		;
 
 /*****************************************************************************
  *
