@@ -167,6 +167,7 @@ jsonbcDictWorkerMain(Datum main_arg)
 	SetClientEncoding(GetDatabaseEncoding());
 
 	OwnLatch(&wrk->workerLatch);
+	ResetLatch(&wrk->workerLatch);
 	SetLatch(&wrk->backendLatch);
 
 	jsonbcDictWorker = wrk;
@@ -226,6 +227,8 @@ jsonbcDictWorkerMain(Datum main_arg)
 		PG_END_TRY();
 	}
 
+	DisownLatch(&wrk->workerLatch);
+
 	proc_exit(0);
 }
 
@@ -235,13 +238,23 @@ jsonbcDictWorkerStart(Oid dbid)
 	BackgroundWorker		bgworker;
 	BackgroundWorkerHandle *bgwhandle;
 	JsonbcDictWorker	   *wrk;
+	LWLock				   *partitionLock;
 	MemoryContext			oldcontext;
 	BgwHandleStatus			status;
 	pid_t					pid;
+	uint32					hashcode;
 	int						rc;
 	bool					found;
 
-	wrk = hash_search(jsonbcDictWorkers, &dbid, HASH_ENTER, &found);
+	hashcode = oid_hash(&dbid, sizeof(dbid));
+	partitionLock = LockHashPartitionLock(hashcode);
+	LWLockAcquire(partitionLock, LW_EXCLUSIVE);
+
+	wrk = hash_search_with_hash_value(jsonbcDictWorkers, &dbid, hashcode,
+									  HASH_ENTER, &found);
+
+	LWLockRelease(partitionLock);
+
 
 	if (found && wrk->started)
 		return wrk;
@@ -260,7 +273,7 @@ jsonbcDictWorkerStart(Oid dbid)
 	/* Configure a worker. */
 	snprintf(bgworker.bgw_name, BGW_MAXLEN, "jsonbc dictionary worker");
 	bgworker.bgw_flags = BGWORKER_SHMEM_ACCESS |
-					   BGWORKER_BACKEND_DATABASE_CONNECTION;
+						 BGWORKER_BACKEND_DATABASE_CONNECTION;
 	bgworker.bgw_start_time = BgWorkerStart_ConsistentState;
 	bgworker.bgw_restart_time = BGW_NEVER_RESTART;
 	bgworker.bgw_main = jsonbcDictWorkerMain;
@@ -273,7 +286,11 @@ jsonbcDictWorkerStart(Oid dbid)
 	PG_TRY();
 	{
 		if (!RegisterDynamicBackgroundWorker(&bgworker, &bgwhandle))
-			elog(ERROR, "failed to register jsonbc dictionary worker");
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+					 errmsg("could not register jsonbc dictionary worker"),
+					 errhint("Consider increasing the configuration parameter "
+							 "\"max_worker_processes\"")));
 
 		status = WaitForBackgroundWorkerStartup(bgwhandle, &pid);
 
@@ -292,7 +309,6 @@ jsonbcDictWorkerStart(Oid dbid)
 		wrk->started = true; /* FIXME use BackgroundWorkerHandle */
 
 		rc = WaitLatch(&wrk->backendLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
-		DisownLatch(&wrk->backendLatch);
 	}
 	PG_CATCH();
 	{
@@ -300,6 +316,8 @@ jsonbcDictWorkerStart(Oid dbid)
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
+
+	DisownLatch(&wrk->backendLatch);
 
 	if (rc & WL_POSTMASTER_DEATH)
 		ereport(ERROR,
@@ -362,7 +380,6 @@ jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
 		if (result == JsonbcInvalidKeyId)
 			errmsg = jsonbcDictWorkerReceiveString(wrk->response.errmq, &errmsglen);
 
-		DisownLatch(&wrk->backendLatch);
 	}
 	PG_CATCH();
 	{
@@ -371,6 +388,7 @@ jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
 	}
 	PG_END_TRY();
 
+	DisownLatch(&wrk->backendLatch);
 	LockRelease(&tag, ExclusiveLock, false);
 
 	if (result == JsonbcInvalidKeyId)
