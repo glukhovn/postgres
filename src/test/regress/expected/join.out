@@ -6851,10 +6851,10 @@ explain (costs off)
 ----------------------------------------
  Aggregate
    ->  Hash Full Join
-         Hash Cond: ((0 - s.id) = r.id)
-         ->  Seq Scan on simple s
+         Hash Cond: (r.id = (0 - s.id))
+         ->  Seq Scan on simple r
          ->  Hash
-               ->  Seq Scan on simple r
+               ->  Seq Scan on simple s
 (6 rows)
 
 select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);
@@ -6873,10 +6873,10 @@ explain (costs off)
 ----------------------------------------
  Aggregate
    ->  Hash Full Join
-         Hash Cond: ((0 - s.id) = r.id)
-         ->  Seq Scan on simple s
+         Hash Cond: (r.id = (0 - s.id))
+         ->  Seq Scan on simple r
          ->  Hash
-               ->  Seq Scan on simple r
+               ->  Seq Scan on simple s
 (6 rows)
 
 select  count(*) from simple r full outer join simple s on (r.id = 0 - s.id);

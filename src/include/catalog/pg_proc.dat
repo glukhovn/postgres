@@ -10609,4 +10609,10 @@
   proname => 'pg_partition_root', prorettype => 'regclass',
   proargtypes => 'regclass', prosrc => 'pg_partition_root' },
 
+{ oid => '3998',
+  descr => 'statistics estimation for binary arithmetic operators',
+  proname => 'arithm_binop_stats', provolatile => 's', prorettype => 'bool',
+  proargtypes => 'internal internal int4 internal',
+  prosrc => 'arithm_binop_stats' },
+
 ]
