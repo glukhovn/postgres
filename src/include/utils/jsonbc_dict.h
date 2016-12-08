@@ -30,6 +30,8 @@ typedef int32 JsonbcDictId;
 
 #define DatumGetJsonbcKeyId(datum)	DatumGetInt32(datum)
 
+extern int jsonbc_max_workers; /* GUC parameter */
+
 typedef struct
 {
 	const char *s;

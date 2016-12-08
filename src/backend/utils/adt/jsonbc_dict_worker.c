@@ -11,12 +11,14 @@
 
 #include "access/xact.h"
 #include "executor/spi.h"
+#include "lib/ilist.h"
 #include "mb/pg_wchar.h"
 #include "postmaster/bgworker.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/proc.h"
 #include "storage/shm_mq.h"
+#include "storage/spin.h"
 #include "utils/hsearch.h"
 #include "utils/jsonbc_dict.h"
 #include "utils/memutils.h"
@@ -26,10 +28,13 @@
 typedef struct JsonbcDictWorker
 {
 	Oid					dbid;
+	BackgroundWorkerHandle	*handle;
 	bool				started;
 
 	Latch		   		workerLatch;
 	Latch			   	backendLatch;
+
+	dlist_node			lruNode;
 
 	struct
 	{
@@ -47,7 +52,15 @@ typedef struct JsonbcDictWorker
 	char				mqbuf[JSONBC_MQ_BUF_SIZE];
 } JsonbcDictWorker;
 
-typedef HTAB JsonbcDictWorkers;
+typedef struct JsonbcDictWorkers
+{
+	slock_t				mutex;
+	dlist_head			lruList;
+	int					nworkers;
+	JsonbcDictWorker	workers[FLEXIBLE_ARRAY_MEMBER];
+} JsonbcDictWorkers;
+
+int jsonbc_max_workers; /* GUC parameter */
 
 static JsonbcDictWorker	   *jsonbcDictWorker;
 static JsonbcDictWorkers   *jsonbcDictWorkers;
@@ -74,15 +87,34 @@ handle_sigterm(SIGNAL_ARGS)
 void
 JsonbcDictWorkerShmemInit()
 {
-	HASHCTL hctl;
+	bool		found;
+	int			i;
 
-	memset(&hctl, 0, sizeof(hctl));
-	hctl.keysize = sizeof(Oid);
-	hctl.entrysize = sizeof(JsonbcDictWorker);
-	hctl.hash = oid_hash;
+	if (jsonbc_max_workers <= 0)
+		return;
 
-	jsonbcDictWorkers = ShmemInitHash("jsonbc dictionary workers hash", 16, 128,
-									  &hctl, HASH_ELEM | HASH_FUNCTION);
+	jsonbcDictWorkers = (JsonbcDictWorkers *)
+			ShmemInitStruct("jsonbc dictionary workers",
+							offsetof(JsonbcDictWorkers, workers) +
+								sizeof(JsonbcDictWorker) * jsonbc_max_workers,
+							&found);
+
+	if (found)
+		return;
+
+	dlist_init(&jsonbcDictWorkers->lruList);
+	SpinLockInit(&jsonbcDictWorkers->mutex);
+	jsonbcDictWorkers->nworkers = jsonbc_max_workers;
+
+	memset(jsonbcDictWorkers->workers, 0,
+		   sizeof(JsonbcDictWorker) * jsonbc_max_workers);
+
+	for (i = 0; i < jsonbc_max_workers; i++)
+	{
+		JsonbcDictWorker	   *wrk = &jsonbcDictWorkers->workers[i];
+		InitSharedLatch(&wrk->workerLatch);
+		InitSharedLatch(&wrk->backendLatch);
+	}
 }
 
 static char *
@@ -232,40 +264,17 @@ jsonbcDictWorkerMain(Datum main_arg)
 	proc_exit(0);
 }
 
-static JsonbcDictWorker *
-jsonbcDictWorkerStart(Oid dbid)
+static void
+jsonbcDictWorkerStart(JsonbcDictWorker *wrk)
 {
 	BackgroundWorker		bgworker;
 	BackgroundWorkerHandle *bgwhandle;
-	JsonbcDictWorker	   *wrk;
-	LWLock				   *partitionLock;
 	MemoryContext			oldcontext;
 	BgwHandleStatus			status;
 	pid_t					pid;
-	uint32					hashcode;
 	int						rc;
-	bool					found;
 
-	hashcode = oid_hash(&dbid, sizeof(dbid));
-	partitionLock = LockHashPartitionLock(hashcode);
-	LWLockAcquire(partitionLock, LW_EXCLUSIVE);
-
-	wrk = hash_search_with_hash_value(jsonbcDictWorkers, &dbid, hashcode,
-									  HASH_ENTER, &found);
-
-	LWLockRelease(partitionLock);
-
-
-	if (found && wrk->started)
-		return wrk;
-
-	if (!found)
-	{
-		InitSharedLatch(&wrk->workerLatch);
-		InitSharedLatch(&wrk->backendLatch);
-	}
-
-	elog(DEBUG1, "starting jsonbc dictionary background worker for DB %d", dbid);
+	elog(DEBUG1, "starting jsonbc dictionary background worker for DB %d", wrk->dbid);
 
 	/* We might be running in a short-lived memory context. */
 	oldcontext = MemoryContextSwitchTo(TopTransactionContext);
@@ -306,7 +315,10 @@ jsonbcDictWorkerStart(Oid dbid)
 					 errhint("Kill all remaining database processes and restart the database.")));
 		Assert(status == BGWH_STARTED);
 
-		wrk->started = true; /* FIXME use BackgroundWorkerHandle */
+		GetSharedBackgroundWorkerHandle(bgwhandle, &wrk->handle);
+		wrk->started = true;
+
+		pfree(bgwhandle);
 
 		rc = WaitLatch(&wrk->backendLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
 	}
@@ -326,9 +338,37 @@ jsonbcDictWorkerStart(Oid dbid)
 				 errhint("Kill all remaining database processes and restart the database.")));
 
 	MemoryContextSwitchTo(oldcontext);
-
-	return wrk;
 }
+
+static void
+jsonbcDictWorkerStop(JsonbcDictWorker *wrk)
+{
+	BgwHandleStatus		bgwstatus;
+
+	TerminateBackgroundWorker(wrk->handle);
+
+#if 0 /* FIXME */
+	SetBackgroundWorkerNotifyPid(wrk->handle, MyProcPid);
+
+	bgwstatus = WaitForBackgroundWorkerShutdown(wrk->handle);
+
+	if (bgwstatus == BGWH_POSTMASTER_DIED)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_RESOURCES),
+				 errmsg("cannot start background processes without postmaster"),
+				 errhint("Kill all remaining database processes and restart the database.")));
+
+	Assert(bgwstatus == BGWH_STOPPED);
+#endif
+
+	wrk->started = false;
+}
+
+typedef struct JsonbcDictWorkerHandle
+{
+	JsonbcDictWorker	   *worker;
+	LOCKTAG					locktag;
+} JsonbcDictWorkerHandle;
 
 #define PG_JSONBC_DICT_LOCK_MAGIC 0x3C59A016
 
@@ -343,20 +383,178 @@ jsonbcDictWorkerInitLockTag(LOCKTAG *tag, Oid dbid)
 	tag->locktag_lockmethodid = USER_LOCKMETHOD;
 }
 
-JsonbcKeyId
-jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
-							JsonbcKeyId nextKeyId)
+static JsonbcDictWorker *
+jsonbcDictWorkerFind(Oid dbid)
 {
-	LOCKTAG					tag;
-	JsonbcDictWorker	   *wrk;
-	JsonbcKeyId				result;
-	char				   *errmsg;
-	int					    errmsglen;
+	JsonbcDictWorker	   *result = NULL;
+	JsonbcDictWorker	   *free = NULL;
+	JsonbcDictWorker	   *worker;
+	int						i;
 
-	jsonbcDictWorkerInitLockTag(&tag, MyDatabaseId);
-	LockAcquire(&tag, ExclusiveLock, false, false);
+	SpinLockAcquire(&jsonbcDictWorkers->mutex);
 
-	wrk = jsonbcDictWorkerStart(MyDatabaseId);
+	for (i = 0, worker = jsonbcDictWorkers->workers;
+		 i < jsonbcDictWorkers->nworkers;
+		 i++, worker++)
+	{
+		if (worker->dbid == dbid)
+		{
+			result = worker;
+			dlist_delete(&result->lruNode);
+			dlist_push_tail(&jsonbcDictWorkers->lruList, &result->lruNode);
+			break;
+		}
+
+		if (!worker->dbid && !free)
+			free = worker;
+	}
+
+	if (!result && free)
+	{
+		result = free;
+		result->dbid = dbid;
+		dlist_push_tail(&jsonbcDictWorkers->lruList, &result->lruNode);
+	}
+
+	SpinLockRelease(&jsonbcDictWorkers->mutex);
+
+	return result;
+}
+
+static JsonbcDictWorker *
+jsonbcDictWorkerPeekVictim(Oid *dbid)
+{
+	JsonbcDictWorker   *victim = NULL;
+
+	SpinLockAcquire(&jsonbcDictWorkers->mutex);
+	if (!dlist_is_empty(&jsonbcDictWorkers->lruList))
+	{
+		victim = dlist_container(JsonbcDictWorker, lruNode,
+								dlist_head_node(&jsonbcDictWorkers->lruList));
+		*dbid = victim->dbid;
+	}
+	SpinLockRelease(&jsonbcDictWorkers->mutex);
+
+	return victim;
+}
+
+static bool
+jsonbcDictWorkerCheckVictim(JsonbcDictWorker *victim, Oid dbid)
+{
+	bool	result;
+
+	SpinLockAcquire(&jsonbcDictWorkers->mutex);
+
+	if (dlist_is_empty(&jsonbcDictWorkers->lruList))
+		result = false;
+	else
+	{
+		JsonbcDictWorker *lru = dlist_container(JsonbcDictWorker, lruNode,
+						dlist_head_node(&jsonbcDictWorkers->lruList));
+		result = victim == lru && lru->dbid == dbid;
+	}
+
+	SpinLockRelease(&jsonbcDictWorkers->mutex);
+
+	return result;
+}
+
+static Oid
+jsonbcDictWorkerGetDbId(JsonbcDictWorker *worker)
+{
+	Oid		dbid;
+
+	SpinLockAcquire(&jsonbcDictWorkers->mutex);
+	dbid = worker->dbid;
+	SpinLockRelease(&jsonbcDictWorkers->mutex);
+
+	return dbid;
+}
+
+static void
+jsonbcDictWorkerReassignDbId(JsonbcDictWorker *worker, Oid dbid)
+{
+	SpinLockAcquire(&jsonbcDictWorkers->mutex);
+
+	Assert(!worker->started);
+
+	dlist_delete(&worker->lruNode);
+	dlist_push_tail(&jsonbcDictWorkers->lruList, &worker->lruNode);
+	worker->started = false;
+	worker->dbid = dbid;
+
+	SpinLockRelease(&jsonbcDictWorkers->mutex);
+}
+
+static JsonbcDictWorker *
+jsonbcDictWorkerTryReuseOne(dbid)
+{
+	LOCKTAG				locktag;
+	JsonbcDictWorker   *victim;
+	Oid					victimdbid;
+
+	if (!(victim = jsonbcDictWorkerPeekVictim(&victimdbid)))
+		return NULL;
+
+	jsonbcDictWorkerInitLockTag(&locktag, victimdbid);
+	LockAcquire(&locktag, ExclusiveLock, false, false);
+
+	if (jsonbcDictWorkerCheckVictim(victim, victimdbid))
+	{
+		jsonbcDictWorkerStop(victim);
+		jsonbcDictWorkerReassignDbId(victim, dbid);
+	}
+	else
+		victim = NULL;
+
+	LockRelease(&locktag, ExclusiveLock, false);
+
+	return victim;
+}
+
+static JsonbcDictWorkerHandle
+jsonbcDictWorkerAcquire(Oid dbid)
+{
+	JsonbcDictWorkerHandle		handle;
+	JsonbcDictWorker		   *worker;
+
+	jsonbcDictWorkerInitLockTag(&handle.locktag, dbid);
+	LockAcquire(&handle.locktag, ExclusiveLock, false, false);
+
+	while (!(worker = jsonbcDictWorkerFind(dbid)))
+	{
+		LockRelease(&handle.locktag, ExclusiveLock, false);
+		worker = jsonbcDictWorkerTryReuseOne(dbid);
+		LockAcquire(&handle.locktag, ExclusiveLock, false, false);
+
+		if (worker && jsonbcDictWorkerGetDbId(worker) == dbid)
+			break;
+	}
+
+	handle.worker = worker;
+
+	if (!worker->started)
+		jsonbcDictWorkerStart(worker);
+
+	return handle;
+}
+
+static void
+jsonbcDictWorkerRelease(JsonbcDictWorkerHandle *handle)
+{
+	LockRelease(&handle->locktag, ExclusiveLock, false);
+	handle->worker = NULL;
+}
+
+static JsonbcKeyId
+jsonbcDictWorkerExecRequest(JsonbcDictWorker *wrk,
+							JsonbcDictId dict,
+							JsonbcKeyName key,
+							JsonbcKeyId nextKeyId,
+							char **errmsg,
+							int *errmsglen)
+{
+	JsonbcKeyId		result;
 
 	OwnLatch(&wrk->backendLatch);
 
@@ -378,8 +576,8 @@ jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
 		elog(DEBUG1, "received response from jsonbc worker: %d", result);
 
 		if (result == JsonbcInvalidKeyId)
-			errmsg = jsonbcDictWorkerReceiveString(wrk->response.errmq, &errmsglen);
-
+			*errmsg = jsonbcDictWorkerReceiveString(wrk->response.errmq,
+													errmsglen);
 	}
 	PG_CATCH();
 	{
@@ -389,11 +587,37 @@ jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
 	PG_END_TRY();
 
 	DisownLatch(&wrk->backendLatch);
-	LockRelease(&tag, ExclusiveLock, false);
+
+	return result;
+}
+
+JsonbcKeyId
+jsonbcDictWorkerGetIdByName(JsonbcDictId dict, JsonbcKeyName key,
+							JsonbcKeyId nextKeyId)
+{
+	JsonbcDictWorkerHandle	worker;
+	JsonbcKeyId				result;
+	char				   *errmessage;
+	int					    errmessagelen;
+
+	if (jsonbc_max_workers <= 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIGURATION_LIMIT_EXCEEDED),
+				 errmsg("cannot insert new keys into pg_jsonbc_dict: "
+						"no jsonbc dictionary workers were configured"),
+				 errhint("Consider increasing the configuration parameter "
+						 "\"jsonbc_max_workers\".")));
+
+	worker = jsonbcDictWorkerAcquire(MyDatabaseId);
+
+	result = jsonbcDictWorkerExecRequest(worker.worker, dict, key, nextKeyId,
+										 &errmessage, &errmessagelen);
+
+	jsonbcDictWorkerRelease(&worker);
 
 	if (result == JsonbcInvalidKeyId)
 		elog(ERROR, "failed to insert key into jsonbc dictionary (%.*s)",
-			 errmsglen, errmsg);
+			 errmessagelen, errmessage);
 
 	return result;
 }
