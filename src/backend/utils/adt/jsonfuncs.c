@@ -1225,13 +1225,23 @@ get_scalar(void *state, char *token, JsonTokenType tokentype)
 Datum
 jsonb_extract_path(PG_FUNCTION_ARGS)
 {
-	return get_jsonb_path_all(fcinfo, false);
+	JsonCacheContext	oldcxt = JsonCacheSwitchToFunc(fcinfo);
+	Datum				result = get_jsonb_path_all(fcinfo, false);
+
+	JsonCacheSwitchTo(oldcxt);
+
+	PG_RETURN_DATUM(result);
 }
 
 Datum
 jsonb_extract_path_text(PG_FUNCTION_ARGS)
 {
-	return get_jsonb_path_all(fcinfo, true);
+	JsonCacheContext	oldcxt = JsonCacheSwitchToFunc(fcinfo);
+	Datum				result = get_jsonb_path_all(fcinfo, true);
+
+	JsonCacheSwitchTo(oldcxt);
+
+	PG_RETURN_DATUM(result);
 }
 
 static Datum
