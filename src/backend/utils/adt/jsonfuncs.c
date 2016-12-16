@@ -454,12 +454,6 @@ static Datum populate_array(ArrayIOData *aio, const char *colname,
 static Datum populate_domain(DomainIOData *io, Oid typid, const char *colname,
 				MemoryContext mcxt, JsValue *jsv, bool isnull);
 
-/* Worker that takes care of common setup for us */
-static JsonbValue *findJsonbValueFromContainerLen(JsonbContainer *container,
-							   uint32 flags,
-							   char *key,
-							   uint32 keylen);
-
 /* functions supporting jsonb_delete, jsonb_set and jsonb_concat */
 static JsonbValue *IteratorConcat(JsonbIterator **it1, JsonbIterator **it2,
 			   JsonbParseState **state);
@@ -3907,9 +3901,9 @@ populate_recordset_object_field_end(void *state, char *fname, bool isnull)
 /*
  * findJsonbValueFromContainer() wrapper that sets up JsonbValue key string.
  */
-static JsonbValue *
+JsonbValue *
 findJsonbValueFromContainerLen(JsonbContainer *container, uint32 flags,
-							   char *key, uint32 keylen)
+							   const char *key, uint32 keylen)
 {
 	JsonbValue	k;
 
@@ -5053,7 +5047,8 @@ iterate_jsonb_values(Jsonb *jb, uint32 flags, void *state,
 		if (type == WJB_KEY)
 		{
 			if (flags & jtiKey)
-				action(state, v.val.string.val, v.val.string.len);
+				action(state, unconstify(char *, v.val.string.val),
+					   v.val.string.len);
 
 			continue;
 		}
@@ -5068,7 +5063,8 @@ iterate_jsonb_values(Jsonb *jb, uint32 flags, void *state,
 		{
 			case jbvString:
 				if (flags & jtiString)
-					action(state, v.val.string.val, v.val.string.len);
+					action(state, unconstify(char *, v.val.string.val),
+						   v.val.string.len);
 				break;
 			case jbvNumeric:
 				if (flags & jtiNumeric)
@@ -5190,7 +5186,9 @@ transform_jsonb_string_values(Jsonb *jsonb, void *action_state,
 	{
 		if ((type == WJB_VALUE || type == WJB_ELEM) && v.type == jbvString)
 		{
-			out = transform_action(action_state, v.val.string.val, v.val.string.len);
+			out = transform_action(action_state,
+								   unconstify(char *, v.val.string.val),
+								   v.val.string.len);
 			v.val.string.val = VARDATA_ANY(out);
 			v.val.string.len = VARSIZE_ANY_EXHDR(out);
 			res = pushJsonbValue(&st, type, type < WJB_BEGIN_ARRAY ? &v : NULL);
