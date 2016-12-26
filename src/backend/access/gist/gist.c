@@ -61,7 +61,6 @@ gisthandler(PG_FUNCTION_ARGS)
 	amroutine->amstrategies = 0;
 	amroutine->amsupport = GISTNProcs;
 	amroutine->amcanorder = false;
-	amroutine->amcanorderbyop = true;
 	amroutine->amcanbackward = false;
 	amroutine->amcanunique = false;
 	amroutine->amcanmulticol = true;
@@ -94,6 +93,7 @@ gisthandler(PG_FUNCTION_ARGS)
 	amroutine->amestimateparallelscan = NULL;
 	amroutine->aminitparallelscan = NULL;
 	amroutine->amparallelrescan = NULL;
+	amroutine->amcanorderbyop = gistcanorderbyop;
 
 	PG_RETURN_POINTER(amroutine);
 }

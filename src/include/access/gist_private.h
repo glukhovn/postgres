@@ -486,6 +486,11 @@ extern void gistMakeUnionKey(GISTSTATE *giststate, int attno,
 
 extern XLogRecPtr gistGetFakeLSN(Relation rel);
 
+extern struct Expr *gistcanorderbyop(struct IndexOptInfo *index,
+									 struct PathKey *pathkey,  int pathkeyno,
+									 struct Expr *orderby_clause,
+									 int *indexcol_p);
+
 /* gistvacuum.c */
 extern IndexBulkDeleteResult *gistbulkdelete(IndexVacuumInfo *info,
 			   IndexBulkDeleteResult *stats,

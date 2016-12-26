@@ -242,7 +242,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 
 			/* We copy just the fields we need, not all of rd_amroutine */
 			amroutine = indexRelation->rd_amroutine;
-			info->amcanorderbyop = amroutine->amcanorderbyop;
+			info->amcanorderbyop = (void (*)()) amroutine->amcanorderbyop;
 			info->amoptionalkey = amroutine->amoptionalkey;
 			info->amsearcharray = amroutine->amsearcharray;
 			info->amsearchnulls = amroutine->amsearchnulls;

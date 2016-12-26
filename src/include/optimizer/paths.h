@@ -84,6 +84,10 @@ extern Expr *adjust_rowcompare_for_index(RowCompareExpr *clause,
 							int indexcol,
 							List **indexcolnos,
 							bool *var_on_left_p);
+extern Expr *match_clause_to_ordering_op(IndexOptInfo *index,
+							int indexcol,
+							Expr *clause,
+							Oid pk_opfamily);
 
 /*
  * tidpath.h

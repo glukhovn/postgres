@@ -20,6 +20,7 @@
 #include "access/htup_details.h"
 #include "access/reloptions.h"
 #include "catalog/pg_opclass.h"
+#include "optimizer/paths.h"
 #include "storage/indexfsm.h"
 #include "storage/lmgr.h"
 #include "utils/builtins.h"
@@ -964,4 +965,32 @@ gistGetFakeLSN(Relation rel)
 		Assert(rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED);
 		return GetFakeLSNForUnloggedRel();
 	}
+}
+
+/* gistcanorderbyop() */
+Expr *
+gistcanorderbyop(IndexOptInfo *index, PathKey *pathkey, int pathkeyno,
+				 Expr *orderby_clause, int *indexcol_p)
+{
+	int		indexcol;
+
+	/*
+	 * We allow any column of the GiST index to match each pathkey;
+	 * they don't have to match left-to-right as you might expect.
+	 */
+
+	for (indexcol = 0; indexcol < index->ncolumns; indexcol++)
+	{
+		Expr	   *expr = match_clause_to_ordering_op(index,
+													   indexcol,
+													   orderby_clause,
+													   pathkey->pk_opfamily);
+		if (expr)
+		{
+			*indexcol_p = indexcol;
+			return expr;
+		}
+	}
+
+	return NULL;
 }

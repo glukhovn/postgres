@@ -17,6 +17,7 @@
 
 #include <math.h>
 
+#include "access/amapi.h"
 #include "access/stratnum.h"
 #include "access/sysattr.h"
 #include "catalog/pg_am.h"
@@ -166,8 +167,6 @@ static bool match_rowcompare_to_indexcol(IndexOptInfo *index,
 static void match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 						List **orderby_clauses_p,
 						List **clause_columns_p);
-static Expr *match_clause_to_ordering_op(IndexOptInfo *index,
-							int indexcol, Expr *clause, Oid pk_opfamily);
 static bool ec_member_matches_indexcol(PlannerInfo *root, RelOptInfo *rel,
 						   EquivalenceClass *ec, EquivalenceMember *em,
 						   void *arg);
@@ -2555,12 +2554,15 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 	List	   *orderby_clauses = NIL;
 	List	   *clause_columns = NIL;
 	ListCell   *lc1;
+	int			pathkeyno = 1;
+	amcanorderbyop_function amcanorderbyop =
+			(amcanorderbyop_function) index->amcanorderbyop;
 
 	*orderby_clauses_p = NIL;	/* set default results */
 	*clause_columns_p = NIL;
 
-	/* Only indexes with the amcanorderbyop property are interesting here */
-	if (!index->amcanorderbyop)
+	/* Only indexes with the amcanorderbyop function are interesting here */
+	if (!amcanorderbyop)
 		return;
 
 	foreach(lc1, pathkeys)
@@ -2594,42 +2596,29 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 		foreach(lc2, pathkey->pk_eclass->ec_members)
 		{
 			EquivalenceMember *member = (EquivalenceMember *) lfirst(lc2);
+			Expr	   *expr;
 			int			indexcol;
 
 			/* No possibility of match if it references other relations */
 			if (!bms_equal(member->em_relids, index->rel->relids))
 				continue;
 
-			/*
-			 * We allow any column of the index to match each pathkey; they
-			 * don't have to match left-to-right as you might expect.  This is
-			 * correct for GiST, which is the sole existing AM supporting
-			 * amcanorderbyop.  We might need different logic in future for
-			 * other implementations.
-			 */
-			for (indexcol = 0; indexcol < index->ncolumns; indexcol++)
+			expr = amcanorderbyop(index, pathkey, pathkeyno, member->em_expr,
+								  &indexcol);
+
+			if (expr)
 			{
-				Expr	   *expr;
-
-				expr = match_clause_to_ordering_op(index,
-												   indexcol,
-												   member->em_expr,
-												   pathkey->pk_opfamily);
-				if (expr)
-				{
-					orderby_clauses = lappend(orderby_clauses, expr);
-					clause_columns = lappend_int(clause_columns, indexcol);
-					found = true;
-					break;
-				}
+				orderby_clauses = lappend(orderby_clauses, expr);
+				clause_columns = lappend_int(clause_columns, indexcol);
+				found = true;
+				break; /* don't want to look at remaining members */
 			}
-
-			if (found)			/* don't want to look at remaining members */
-				break;
 		}
 
 		if (!found)				/* fail if no match for this pathkey */
 			return;
+
+		pathkeyno++;
 	}
 
 	*orderby_clauses_p = orderby_clauses;	/* success! */
@@ -2661,7 +2650,7 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
  * If successful, return 'clause' as-is if the indexkey is on the left,
  * otherwise a commuted copy of 'clause'.  If no match, return NULL.
  */
-static Expr *
+Expr *
 match_clause_to_ordering_op(IndexOptInfo *index,
 							int indexcol,
 							Expr *clause,
