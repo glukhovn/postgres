@@ -105,54 +105,63 @@ DATA(insert (	1976   21 21 2 s	522 403 0 ));
 DATA(insert (	1976   21 21 3 s	94	403 0 ));
 DATA(insert (	1976   21 21 4 s	524 403 0 ));
 DATA(insert (	1976   21 21 5 s	520 403 0 ));
+DATA(insert (	1976   21 21 6 o	4138	403 1976 ));
 /* crosstype operators int24 */
 DATA(insert (	1976   21 23 1 s	534 403 0 ));
 DATA(insert (	1976   21 23 2 s	540 403 0 ));
 DATA(insert (	1976   21 23 3 s	532 403 0 ));
 DATA(insert (	1976   21 23 4 s	542 403 0 ));
 DATA(insert (	1976   21 23 5 s	536 403 0 ));
+DATA(insert (	1976   21 23 6 o	4164	403 1976 ));
 /* crosstype operators int28 */
 DATA(insert (	1976   21 20 1 s	1864	403 0 ));
 DATA(insert (	1976   21 20 2 s	1866	403 0 ));
 DATA(insert (	1976   21 20 3 s	1862	403 0 ));
 DATA(insert (	1976   21 20 4 s	1867	403 0 ));
 DATA(insert (	1976   21 20 5 s	1865	403 0 ));
+DATA(insert (	1976   21 20 6 o	4166	403 1976 ));
 /* default operators int4 */
 DATA(insert (	1976   23 23 1 s	97	403 0 ));
 DATA(insert (	1976   23 23 2 s	523 403 0 ));
 DATA(insert (	1976   23 23 3 s	96	403 0 ));
 DATA(insert (	1976   23 23 4 s	525 403 0 ));
 DATA(insert (	1976   23 23 5 s	521 403 0 ));
+DATA(insert (	1976   23 23 6 o	4139	403 1976 ));
 /* crosstype operators int42 */
 DATA(insert (	1976   23 21 1 s	535 403 0 ));
 DATA(insert (	1976   23 21 2 s	541 403 0 ));
 DATA(insert (	1976   23 21 3 s	533 403 0 ));
 DATA(insert (	1976   23 21 4 s	543 403 0 ));
 DATA(insert (	1976   23 21 5 s	537 403 0 ));
+DATA(insert (	1976   23 21 6 o	4165	403 1976 ));
 /* crosstype operators int48 */
 DATA(insert (	1976   23 20 1 s	37	403 0 ));
 DATA(insert (	1976   23 20 2 s	80	403 0 ));
 DATA(insert (	1976   23 20 3 s	15	403 0 ));
 DATA(insert (	1976   23 20 4 s	82	403 0 ));
 DATA(insert (	1976   23 20 5 s	76	403 0 ));
+DATA(insert (	1976   23 20 6 o	4168	403 1976 ));
 /* default operators int8 */
 DATA(insert (	1976   20 20 1 s	412 403 0 ));
 DATA(insert (	1976   20 20 2 s	414 403 0 ));
 DATA(insert (	1976   20 20 3 s	410 403 0 ));
 DATA(insert (	1976   20 20 4 s	415 403 0 ));
 DATA(insert (	1976   20 20 5 s	413 403 0 ));
+DATA(insert (	1976   20 20 6 o	4140	403 1976 ));
 /* crosstype operators int82 */
 DATA(insert (	1976   20 21 1 s	1870	403 0 ));
 DATA(insert (	1976   20 21 2 s	1872	403 0 ));
 DATA(insert (	1976   20 21 3 s	1868	403 0 ));
 DATA(insert (	1976   20 21 4 s	1873	403 0 ));
 DATA(insert (	1976   20 21 5 s	1871	403 0 ));
+DATA(insert (	1976   20 21 6 o	4167	403 1976 ));
 /* crosstype operators int84 */
 DATA(insert (	1976   20 23 1 s	418 403 0 ));
 DATA(insert (	1976   20 23 2 s	420 403 0 ));
 DATA(insert (	1976   20 23 3 s	416 403 0 ));
 DATA(insert (	1976   20 23 4 s	430 403 0 ));
 DATA(insert (	1976   20 23 5 s	419 403 0 ));
+DATA(insert (	1976   20 23 6 o	4169	403 1976 ));
 
 /*
  *	btree oid_ops
@@ -163,6 +172,7 @@ DATA(insert (	1989   26 26 2 s	611 403 0 ));
 DATA(insert (	1989   26 26 3 s	607 403 0 ));
 DATA(insert (	1989   26 26 4 s	612 403 0 ));
 DATA(insert (	1989   26 26 5 s	610 403 0 ));
+DATA(insert (	1989   26 26 6 o	4141 403 1989 ));
 
 /*
  * btree tid_ops
@@ -194,24 +204,28 @@ DATA(insert (	1970   700 700 2 s	624 403 0 ));
 DATA(insert (	1970   700 700 3 s	620 403 0 ));
 DATA(insert (	1970   700 700 4 s	625 403 0 ));
 DATA(insert (	1970   700 700 5 s	623 403 0 ));
+DATA(insert (	1970   700 700 6 o	4142 403 1970 ));
 /* crosstype operators float48 */
 DATA(insert (	1970   700 701 1 s	1122 403 0 ));
 DATA(insert (	1970   700 701 2 s	1124 403 0 ));
 DATA(insert (	1970   700 701 3 s	1120 403 0 ));
 DATA(insert (	1970   700 701 4 s	1125 403 0 ));
 DATA(insert (	1970   700 701 5 s	1123 403 0 ));
+DATA(insert (	1970   700 701 6 o	4170 403 1970 ));
 /* default operators float8 */
 DATA(insert (	1970   701 701 1 s	672 403 0 ));
 DATA(insert (	1970   701 701 2 s	673 403 0 ));
 DATA(insert (	1970   701 701 3 s	670 403 0 ));
 DATA(insert (	1970   701 701 4 s	675 403 0 ));
 DATA(insert (	1970   701 701 5 s	674 403 0 ));
+DATA(insert (	1970   701 701 6 o	4143 403 1970 ));
 /* crosstype operators float84 */
 DATA(insert (	1970   701 700 1 s	1132 403 0 ));
 DATA(insert (	1970   701 700 2 s	1134 403 0 ));
 DATA(insert (	1970   701 700 3 s	1130 403 0 ));
 DATA(insert (	1970   701 700 4 s	1135 403 0 ));
 DATA(insert (	1970   701 700 5 s	1133 403 0 ));
+DATA(insert (	1970   701 700 6 o	4171 403 1970 ));
 
 /*
  *	btree char_ops
@@ -283,54 +297,63 @@ DATA(insert (	434   1082 1082 2 s 1096	403 0 ));
 DATA(insert (	434   1082 1082 3 s 1093	403 0 ));
 DATA(insert (	434   1082 1082 4 s 1098	403 0 ));
 DATA(insert (	434   1082 1082 5 s 1097	403 0 ));
+DATA(insert (	434   1082 1082 6 o 4145	403 1976 ));
 /* crosstype operators vs timestamp */
 DATA(insert (	434   1082 1114 1 s 2345	403 0 ));
 DATA(insert (	434   1082 1114 2 s 2346	403 0 ));
 DATA(insert (	434   1082 1114 3 s 2347	403 0 ));
 DATA(insert (	434   1082 1114 4 s 2348	403 0 ));
 DATA(insert (	434   1082 1114 5 s 2349	403 0 ));
+DATA(insert (	434   1082 1114 6 o 4172	403 1982 ));
 /* crosstype operators vs timestamptz */
 DATA(insert (	434   1082 1184 1 s 2358	403 0 ));
 DATA(insert (	434   1082 1184 2 s 2359	403 0 ));
 DATA(insert (	434   1082 1184 3 s 2360	403 0 ));
 DATA(insert (	434   1082 1184 4 s 2361	403 0 ));
 DATA(insert (	434   1082 1184 5 s 2362	403 0 ));
+DATA(insert (	434   1082 1184 6 o 4174	403 1982 ));
 /* default operators timestamp */
 DATA(insert (	434   1114 1114 1 s 2062	403 0 ));
 DATA(insert (	434   1114 1114 2 s 2063	403 0 ));
 DATA(insert (	434   1114 1114 3 s 2060	403 0 ));
 DATA(insert (	434   1114 1114 4 s 2065	403 0 ));
 DATA(insert (	434   1114 1114 5 s 2064	403 0 ));
+DATA(insert (	434   1114 1114 6 o 4147	403 1982 ));
 /* crosstype operators vs date */
 DATA(insert (	434   1114 1082 1 s 2371	403 0 ));
 DATA(insert (	434   1114 1082 2 s 2372	403 0 ));
 DATA(insert (	434   1114 1082 3 s 2373	403 0 ));
 DATA(insert (	434   1114 1082 4 s 2374	403 0 ));
 DATA(insert (	434   1114 1082 5 s 2375	403 0 ));
+DATA(insert (	434   1114 1082 6 o 4173	403 1982 ));
 /* crosstype operators vs timestamptz */
 DATA(insert (	434   1114 1184 1 s 2534	403 0 ));
 DATA(insert (	434   1114 1184 2 s 2535	403 0 ));
 DATA(insert (	434   1114 1184 3 s 2536	403 0 ));
 DATA(insert (	434   1114 1184 4 s 2537	403 0 ));
 DATA(insert (	434   1114 1184 5 s 2538	403 0 ));
+DATA(insert (	434   1114 1184 6 o 4176	403 1982 ));
 /* default operators timestamptz */
 DATA(insert (	434   1184 1184 1 s 1322	403 0 ));
 DATA(insert (	434   1184 1184 2 s 1323	403 0 ));
 DATA(insert (	434   1184 1184 3 s 1320	403 0 ));
 DATA(insert (	434   1184 1184 4 s 1325	403 0 ));
 DATA(insert (	434   1184 1184 5 s 1324	403 0 ));
+DATA(insert (	434   1184 1184 6 o 4148	403 1982 ));
 /* crosstype operators vs date */
 DATA(insert (	434   1184 1082 1 s 2384	403 0 ));
 DATA(insert (	434   1184 1082 2 s 2385	403 0 ));
 DATA(insert (	434   1184 1082 3 s 2386	403 0 ));
 DATA(insert (	434   1184 1082 4 s 2387	403 0 ));
 DATA(insert (	434   1184 1082 5 s 2388	403 0 ));
+DATA(insert (	434   1184 1082 6 o 4175	403 1982 ));
 /* crosstype operators vs timestamp */
 DATA(insert (	434   1184 1114 1 s 2540	403 0 ));
 DATA(insert (	434   1184 1114 2 s 2541	403 0 ));
 DATA(insert (	434   1184 1114 3 s 2542	403 0 ));
 DATA(insert (	434   1184 1114 4 s 2543	403 0 ));
 DATA(insert (	434   1184 1114 5 s 2544	403 0 ));
+DATA(insert (	434   1184 1114 6 o 4177	403 1982 ));
 
 /*
  *	btree time_ops
@@ -341,6 +364,7 @@ DATA(insert (	1996   1083 1083 2 s 1111 403 0 ));
 DATA(insert (	1996   1083 1083 3 s 1108 403 0 ));
 DATA(insert (	1996   1083 1083 4 s 1113 403 0 ));
 DATA(insert (	1996   1083 1083 5 s 1112 403 0 ));
+DATA(insert (	1996   1083 1083 6 o 4146 403 1982 ));
 
 /*
  *	btree timetz_ops
@@ -361,6 +385,7 @@ DATA(insert (	1982   1186 1186 2 s 1333 403 0 ));
 DATA(insert (	1982   1186 1186 3 s 1330 403 0 ));
 DATA(insert (	1982   1186 1186 4 s 1335 403 0 ));
 DATA(insert (	1982   1186 1186 5 s 1334 403 0 ));
+DATA(insert (	1982   1186 1186 6 o 4149 403 1982 ));
 
 /*
  *	btree macaddr
@@ -461,6 +486,7 @@ DATA(insert (	2099   790 790 2 s	904 403 0 ));
 DATA(insert (	2099   790 790 3 s	900 403 0 ));
 DATA(insert (	2099   790 790 4 s	905 403 0 ));
 DATA(insert (	2099   790 790 5 s	903 403 0 ));
+DATA(insert (	2099   790 790 6 o	4144 403 2099 ));
 
 /*
  *	btree reltime_ops

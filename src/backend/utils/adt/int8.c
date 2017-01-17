@@ -1508,3 +1508,48 @@ generate_series_step_int8(PG_FUNCTION_ARGS)
 		/* do when there is no more left */
 		SRF_RETURN_DONE(funcctx);
 }
+
+static int64
+int88_dist(int64 a, int64 b)
+{
+	int64		r = a - b;
+	int64		ra = Abs(r);
+
+	/* Overflow check. */
+	if (ra < 0 || (!SAMESIGN(a, b) && !SAMESIGN(r, a)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("bigint out of range")));
+
+	PG_RETURN_INT64(ra);
+}
+
+Datum
+int8_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(int88_dist(PG_GETARG_INT64(0), PG_GETARG_INT64(1)));
+}
+
+Datum
+int82_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(int88_dist(PG_GETARG_INT64(0), (int64) PG_GETARG_INT16(1)));
+}
+
+Datum
+int84_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(int88_dist(PG_GETARG_INT64(0), (int64) PG_GETARG_INT32(1)));
+}
+
+Datum
+int28_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(int88_dist((int64) PG_GETARG_INT16(0), PG_GETARG_INT64(1)));
+}
+
+Datum
+int48_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(int88_dist((int64) PG_GETARG_INT32(0), PG_GETARG_INT64(1)));
+}

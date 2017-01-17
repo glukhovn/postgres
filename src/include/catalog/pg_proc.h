@@ -5538,6 +5538,37 @@ DESCR("list files in the log directory");
 DATA(insert OID = 3354 (  pg_ls_waldir				 PGNSP PGUID 12 10 20 0 0 f f f f t t v s 0 0 2249 "" "{25,20,1184}" "{o,o,o}" "{name,size,modification}" _null_ _null_ pg_ls_waldir _null_ _null_ _null_ ));
 DESCR("list of files in the WAL directory");
 
+/* distance functions */
+DATA(insert OID = 4126 ( int2_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 21 "21 21"		_null_ _null_ _null_ _null_ _null_	int2_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4127 ( int4_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 23 "23 23"		_null_ _null_ _null_ _null_ _null_	int4_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4128 ( int8_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 20 "20 20"		_null_ _null_ _null_ _null_ _null_	int8_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4129 ( oid_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 26 "26 26"		_null_ _null_ _null_ _null_ _null_	oid_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4130 ( float4_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	700 "700 700"	_null_ _null_ _null_ _null_ _null_	float4_dist _null_ _null_ _null_ ));
+DATA(insert OID = 4131 ( float8_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	701 "701 701"	_null_ _null_ _null_ _null_ _null_	float8_dist _null_ _null_ _null_ ));
+DATA(insert OID = 4132 ( cash_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	790 "790 790"	_null_ _null_ _null_ _null_ _null_	cash_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4133 ( date_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 23 "1082 1082" _null_ _null_ _null_ _null_ _null_	date_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4134 ( time_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1083 1083" _null_ _null_ _null_ _null_ _null_	time_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4135 ( timestamp_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1114 1114" _null_ _null_ _null_ _null_ _null_	timestamp_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4136 ( timestamptz_dist PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1184 1184" _null_ _null_ _null_ _null_ _null_ timestamptz_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4137 ( interval_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1186 1186" _null_ _null_ _null_ _null_ _null_	interval_dist _null_ _null_ _null_ ));
+
+/* cross-type distance functions */
+DATA(insert OID = 4150 ( int24_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 23 "21 23"		_null_ _null_ _null_ _null_ _null_	int24_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4151 ( int28_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 20 "21 20"		_null_ _null_ _null_ _null_ _null_	int28_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4152 ( int42_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 23 "23 21"		_null_ _null_ _null_ _null_ _null_	int42_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4153 ( int48_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 20 "23 20"		_null_ _null_ _null_ _null_ _null_	int48_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4154 ( int82_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 20 "20 21"		_null_ _null_ _null_ _null_ _null_	int82_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4155 ( int84_dist		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	 20 "20 23"		_null_ _null_ _null_ _null_ _null_	int84_dist	_null_ _null_ _null_ ));
+DATA(insert OID = 4156 ( float48_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	701 "700 701"	_null_ _null_ _null_ _null_ _null_	float48_dist _null_ _null_ _null_ ));
+DATA(insert OID = 4157 ( float84_dist	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0	701 "701 700"	_null_ _null_ _null_ _null_ _null_	float84_dist _null_ _null_ _null_ ));
+DATA(insert OID = 4158 ( date_dist_timestamp		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1082 1114" _null_ _null_ _null_ _null_ _null_	date_dist_timestamp _null_ _null_ _null_ ));
+DATA(insert OID = 4159 ( date_dist_timestamptz		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1082 1184" _null_ _null_ _null_ _null_ _null_	date_dist_timestamptz _null_ _null_ _null_ ));
+DATA(insert OID = 4160 ( timestamp_dist_date		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1114 1082" _null_ _null_ _null_ _null_ _null_	timestamp_dist_date _null_ _null_ _null_ ));
+DATA(insert OID = 4161 ( timestamp_dist_timestamptz	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1114 1184" _null_ _null_ _null_ _null_ _null_	timestamp_dist_timestamptz _null_ _null_ _null_ ));
+DATA(insert OID = 4162 ( timestamptz_dist_date		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1184 1082" _null_ _null_ _null_ _null_ _null_	timestamptz_dist_date _null_ _null_ _null_ ));
+DATA(insert OID = 4163 ( timestamptz_dist_timestamp	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1186 "1184 1114" _null_ _null_ _null_ _null_ _null_	timestamptz_dist_timestamp _null_ _null_ _null_ ));
+
+
 /*
  * Symbolic values for provolatile column: these indicate whether the result
  * of a function is dependent *only* on the values of its explicit arguments,

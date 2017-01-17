@@ -1395,3 +1395,54 @@ generate_series_step_int4(PG_FUNCTION_ARGS)
 		/* do when there is no more left */
 		SRF_RETURN_DONE(funcctx);
 }
+
+Datum
+int2_dist(PG_FUNCTION_ARGS)
+{
+	int16		a = PG_GETARG_INT16(0);
+	int16		b = PG_GETARG_INT16(1);
+	int16		r = a - b;
+	int16		ra = Abs(r);
+
+	/* Overflow check. */
+	if (ra < 0 || (!SAMESIGN(a, b) && !SAMESIGN(r, a)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("smallint out of range")));
+
+	PG_RETURN_INT16(ra);
+}
+
+static int32
+int44_dist(int32 a, int32 b)
+{
+	int32		r = a - b;
+	int32		ra = Abs(r);
+
+	/* Overflow check. */
+	if (ra < 0 || (!SAMESIGN(a, b) && !SAMESIGN(r, a)))
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("integer out of range")));
+
+	return ra;
+}
+
+
+Datum
+int4_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(int44_dist(PG_GETARG_INT32(0), PG_GETARG_INT32(1)));
+}
+
+Datum
+int24_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(int44_dist(PG_GETARG_INT16(0), PG_GETARG_INT32(1)));
+}
+
+Datum
+int42_dist(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(int44_dist(PG_GETARG_INT32(0), PG_GETARG_INT16(1)));
+}
