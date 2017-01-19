@@ -774,6 +774,7 @@ typedef struct spgLeafConsistentOut
 {
     Datum       leafValue;        /* reconstructed original data, if any */
     bool        recheck;          /* set true if operator must be rechecked */
+    bool        recheckDistances; /* set true if distances must be rechecked */
     double     *distances;        /* associated distances */
 } spgLeafConsistentOut;
 </programlisting>
@@ -822,6 +823,10 @@ typedef struct spgLeafConsistentOut
        If the ordered search is performed, <structfield>distances</structfield>
        should be set in accordance with the ordering operator provided, otherwise
        implementation is supposed to set it to NULL.
+       If at least one of returned distances is not exact, the function must set
+       <structfield>recheckDistances</structfield> to true.  In this case, the executor
+       calculates the exact distances after fetching the tuple from the heap,
+       and reorders the tuples if necessary.
       </para>
      </listitem>
     </varlistentry>

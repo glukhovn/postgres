@@ -130,33 +130,24 @@ typedef struct SpGistState
 	bool		isBuild;		/* true if doing index build */
 } SpGistState;
 
-typedef enum SPGistSearchItemState
-{
-	HEAP_RECHECK,				/* SearchItem is heap item and recheck is
-								 * needed before reporting */
-	HEAP_NORECHECK,				/* SearchItem is heap item and no recheck is
-								 * needed */
-	INNER						/* SearchItem is inner tree item - recheck
-								 * irrelevant */
-} SPGistSearchItemState;
-
 typedef struct SpGistSearchItem
 {
 	pairingheap_node phNode;	/* pairing heap node */
-	SPGistSearchItemState itemState;	/* see above */
 	Datum		value;			/* value reconstructed from parent or
 								 * leafValue if heaptuple */
 	void	   *traversalValue; /* opclass-specific traverse value */
 	int			level;			/* level of items on this page */
 	ItemPointerData heap;		/* heap info, if heap tuple */
+	bool		isLeaf;			/* SearchItem is heap item */
+	bool		recheckQual;	/* qual recheck is needed */
+	bool		recheckDist;	/* distance recheck is needed */
 	bool		isnull;
 
 	/* array with numberOfOrderBys entries */
 	double		distances[FLEXIBLE_ARRAY_MEMBER];
 } SpGistSearchItem;
 
-#define SpGistSearchItemIsHeap(item)	((item).itemState == HEAP_RECHECK \
-									  || (item).itemState == HEAP_NORECHECK)
+#define SpGistSearchItemIsHeap(item)	((item).isLeaf)
 
 #define SizeOfSpGistSearchItem(n_distances) \
 	(offsetof(SpGistSearchItem, distances) + sizeof(double) * (n_distances))
@@ -181,6 +172,7 @@ typedef struct SpGistScanOpaqueData
 	ScanKey		keyData;		/* array of index qualifier descriptors */
 	int			numberOfOrderBys;
 	ScanKey		orderByData;
+	Oid		   *orderByTypes;
 
 	FmgrInfo	innerConsistentFn;
 	FmgrInfo	leafConsistentFn;
@@ -201,7 +193,9 @@ typedef struct SpGistScanOpaqueData
 	int			iPtr;			/* index for scanning through same */
 	ItemPointerData heapPtrs[MaxIndexTuplesPerPage];	/* TIDs from cur page */
 	bool		recheck[MaxIndexTuplesPerPage]; /* their recheck flags */
+	bool		recheckDist[MaxIndexTuplesPerPage]; /* distance recheck flags */
 	HeapTuple	reconTups[MaxIndexTuplesPerPage];	/* reconstructed tuples */
+	double	   *distances[MaxIndexTuplesPerPage];	/* distances (for recheck) */
 
 	/*
 	 * Note: using MaxIndexTuplesPerPage above is a bit hokey since
