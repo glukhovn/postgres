@@ -184,6 +184,7 @@ typedef struct spgLeafConsistentOut
 {
 	Datum		leafValue;		/* reconstructed original data, if any */
 	bool		recheck;		/* set true if operator must be rechecked */
+	bool		recheckDistances; /* set true if distances must be rechecked */
 	double	   *distances;		/* associated distances */
 } spgLeafConsistentOut;
 

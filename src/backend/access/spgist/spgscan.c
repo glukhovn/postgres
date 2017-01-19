@@ -15,18 +15,21 @@
 
 #include "postgres.h"
 
+#include "access/genam.h"
 #include "access/relscan.h"
 #include "access/spgist_private.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/datum.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
 
 typedef void (*storeRes_func) (SpGistScanOpaque so, ItemPointer heapPtr,
-							   Datum leafValue, bool isnull, bool recheck);
+							   Datum leafValue, bool isnull, bool recheck,
+							   bool recheckDist, double *distances);
 
 /*
  * Pairing heap comparison function for the SpGistSearchItem queue
@@ -91,7 +94,7 @@ spgAddStartItem(SpGistScanOpaque so, bool isnull)
 	ItemPointerSet(&startEntry->heap,
 				   isnull ? SPGIST_NULL_BLKNO : SPGIST_ROOT_BLKNO,
 				   FirstOffsetNumber);
-	startEntry->itemState = INNER;
+	startEntry->isLeaf = false;
 	startEntry->level = 0;
 	startEntry->isnull = isnull;
 
@@ -116,6 +119,15 @@ resetSpGistScanOpaque(SpGistScanOpaque so)
 		spgAddStartItem(so, false);
 
 	MemoryContextSwitchTo(oldCtx);
+
+	if (so->numberOfOrderBys > 0)
+	{
+		/* Must pfree distances to avoid memory leak */
+		int			i;
+
+		for (i = 0; i < so->nPtrs; i++)
+			pfree(so->distances[i]);
+	}
 
 	if (so->want_itup)
 	{
@@ -230,11 +242,21 @@ spgbeginscan(Relation rel, int keysz, int orderbysz)
 	/* Set up indexTupDesc and xs_hitupdesc in case it's an index-only scan */
 	so->indexTupDesc = scan->xs_hitupdesc = RelationGetDescr(rel);
 
-	so->zeroDistances = (double *) palloc0(sizeof(double) * scan->numberOfOrderBys);
-	so->infDistances = (double *) palloc(sizeof(double) * scan->numberOfOrderBys);
+	if (scan->numberOfOrderBys > 0)
+	{
+		so->zeroDistances = palloc(sizeof(double) * scan->numberOfOrderBys);
+		so->infDistances = palloc(sizeof(double) * scan->numberOfOrderBys);
 
-	for (i = 0; i < scan->numberOfOrderBys; i++)
-		so->infDistances[i] = get_float8_infinity();
+		for (i = 0; i < scan->numberOfOrderBys; i++)
+		{
+			so->zeroDistances[i] = 0.0;
+			so->infDistances[i] = get_float8_infinity();
+		}
+
+		scan->xs_orderbyvals = palloc0(sizeof(Datum) * scan->numberOfOrderBys);
+		scan->xs_orderbynulls = palloc(sizeof(bool) * scan->numberOfOrderBys);
+		memset(scan->xs_orderbynulls, true, sizeof(bool) * scan->numberOfOrderBys);
+	}
 
 	so->queueCxt = AllocSetContextCreate(CurrentMemoryContext,
 										 "SP-GiST queue context",
@@ -268,8 +290,33 @@ spgrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 				scan->numberOfKeys * sizeof(ScanKeyData));
 
 	if (orderbys && scan->numberOfOrderBys > 0)
+	{
+		int			i;
+
 		memmove(scan->orderByData, orderbys,
 				scan->numberOfOrderBys * sizeof(ScanKeyData));
+
+		so->orderByTypes = (Oid *) palloc(sizeof(Oid) * scan->numberOfOrderBys);
+
+		for (i = 0; i < scan->numberOfOrderBys; i++)
+		{
+			ScanKey		skey = &scan->orderByData[i];
+
+			/*
+			 * Look up the datatype returned by the original ordering
+			 * operator. SP-GiST always uses a float8 for the distance function,
+			 * but the ordering operator could be anything else.
+			 *
+			 * XXX: The distance function is only allowed to be lossy if the
+			 * ordering operator's result type is float4 or float8.  Otherwise
+			 * we don't know how to return the distance to the executor.  But
+			 * we cannot check that here, as we won't know if the distance
+			 * function is lossy until it returns *recheck = true for the
+			 * first time.
+			 */
+			so->orderByTypes[i] = get_func_rettype(skey->sk_func.fn_oid);
+		}
+	}
 
 	/* preprocess scankeys, set up the representation in *so */
 	spgPrepareScanKeys(scan);
@@ -303,7 +350,7 @@ spgendscan(IndexScanDesc scan)
  */
 static SpGistSearchItem *
 spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointerData heapPtr,
-			   Datum leafValue, bool recheck, bool isnull)
+			   Datum leafValue, bool recheckQual, bool recheckDist, bool isnull)
 {
 	SpGistSearchItem *item = (SpGistSearchItem *) palloc(
 								SizeOfSpGistSearchItem(so->numberOfOrderBys));
@@ -315,7 +362,9 @@ spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointerData heapPtr,
 		datumCopy(leafValue, so->state.attType.attbyval,
 				  so->state.attType.attlen);
 	item->traversalValue = NULL;
-	item->itemState = recheck ? HEAP_RECHECK : HEAP_NORECHECK;
+	item->isLeaf = true;
+	item->recheckQual = recheckQual;
+	item->recheckDist = recheckDist;
 	item->isnull = isnull;
 
 	return item;
@@ -335,7 +384,8 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 	Datum		leafValue;
 	double	   *distances;
 	bool		result;
-	bool		recheck;
+	bool		recheckQual;
+	bool		recheckDist;
 
 	if (isnull)
 	{
@@ -344,7 +394,8 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		leafValue = (Datum) 0;
 		/* Assume that all distances for null entries are infinities */
 		distances = so->infDistances;
-		recheck = false;
+		recheckQual = false;
+		recheckDist = false;
 		result = true;
 	}
 	else
@@ -368,12 +419,14 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		out.leafValue = (Datum) 0;
 		out.recheck = false;
 		out.distances = NULL;
+		out.recheckDistances = false;
 
 		result = DatumGetBool(FunctionCall2Coll(&so->leafConsistentFn,
 												so->indexCollation,
 												PointerGetDatum(&in),
 												PointerGetDatum(&out)));
-		recheck = out.recheck;
+		recheckQual = out.recheck;
+		recheckDist = out.recheckDistances;
 		leafValue = out.leafValue;
 		distances = out.distances;
 
@@ -389,7 +442,9 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			MemoryContext oldCxt = MemoryContextSwitchTo(so->queueCxt);
 			SpGistSearchItem *heapItem = spgNewHeapItem(so, item->level,
 														leafTuple->heapPtr,
-														leafValue, recheck,
+														leafValue,
+														recheckQual,
+														recheckDist,
 														isnull);
 
 			spgAddSearchItemToQueue(so, heapItem, distances);
@@ -399,7 +454,9 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		else
 		{
 			/* non-ordered scan, so report the item right away */
-			storeRes(so, &leafTuple->heapPtr, leafValue, isnull, recheck);
+			Assert(!recheckDist);
+			storeRes(so, &leafTuple->heapPtr, leafValue, isnull,
+					 recheckQual, false, NULL);
 			*reportedSome = true;
 		}
 	}
@@ -458,7 +515,9 @@ spgMakeInnerItem(SpGistScanOpaque so,
 	item->traversalValue =
 			out->traversalValues ? out->traversalValues[i] : NULL;
 
-	item->itemState = INNER;
+	item->isLeaf = false;
+	item->recheckQual = false;
+	item->recheckDist = false;
 	item->isnull = isnull;
 
 	return item;
@@ -639,7 +698,7 @@ redirect:
 			/* We store heap items in the queue only in case of ordered search */
 			Assert(so->numberOfOrderBys > 0);
 			storeRes(so, &item->heap, item->value, item->isnull,
-					 item->itemState == HEAP_RECHECK);
+					 item->recheckQual, item->recheckDist, item->distances);
 			reportedSome = true;
 		}
 		else
@@ -732,8 +791,10 @@ redirect:
 /* storeRes subroutine for getbitmap case */
 static void
 storeBitmap(SpGistScanOpaque so, ItemPointer heapPtr,
-			Datum leafValue, bool isnull, bool recheck)
+			Datum leafValue, bool isnull, bool recheck, bool recheckDist,
+			double *distances)
 {
+	Assert(!recheckDist && !distances);
 	tbm_add_tuples(so->tbm, heapPtr, 1, recheck);
 	so->ntids++;
 }
@@ -757,11 +818,21 @@ spggetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 /* storeRes subroutine for gettuple case */
 static void
 storeGettuple(SpGistScanOpaque so, ItemPointer heapPtr,
-			  Datum leafValue, bool isnull, bool recheck)
+			  Datum leafValue, bool isnull, bool recheck, bool recheckDist,
+			  double *distances)
 {
 	Assert(so->nPtrs < MaxIndexTuplesPerPage);
 	so->heapPtrs[so->nPtrs] = *heapPtr;
 	so->recheck[so->nPtrs] = recheck;
+	so->recheckDist[so->nPtrs] = recheckDist;
+
+	if (so->numberOfOrderBys > 0)
+	{
+		Size		size = sizeof(double) * so->numberOfOrderBys;
+
+		so->distances[so->nPtrs] = memcpy(palloc(size), distances, size);
+	}
+
 	if (so->want_itup)
 	{
 		/*
@@ -793,10 +864,23 @@ spggettuple(IndexScanDesc scan, ScanDirection dir)
 			/* continuing to return reported tuples */
 			scan->xs_ctup.t_self = so->heapPtrs[so->iPtr];
 			scan->xs_recheck = so->recheck[so->iPtr];
-			scan->xs_recheckorderby = false;
 			scan->xs_hitup = so->reconTups[so->iPtr];
+
+			if (so->numberOfOrderBys > 0)
+				index_store_orderby_distances(scan, so->orderByTypes,
+											  so->distances[so->iPtr],
+											  so->recheckDist[so->iPtr]);
 			so->iPtr++;
 			return true;
+		}
+
+		if (so->numberOfOrderBys > 0)
+		{
+			/* Must pfree distances to avoid memory leak */
+			int			i;
+
+			for (i = 0; i < so->nPtrs; i++)
+				pfree(so->distances[i]);
 		}
 
 		if (so->want_itup)
