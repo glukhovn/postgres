@@ -147,8 +147,6 @@ typedef struct SpGistSearchItem
 	double		distances[FLEXIBLE_ARRAY_MEMBER];
 } SpGistSearchItem;
 
-#define SpGistSearchItemIsHeap(item)	((item).isLeaf)
-
 #define SizeOfSpGistSearchItem(n_distances) \
 	(offsetof(SpGistSearchItem, distances) + sizeof(double) * (n_distances))
 
