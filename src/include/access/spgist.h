@@ -30,7 +30,8 @@
 #define SPGIST_PICKSPLIT_PROC			3
 #define SPGIST_INNER_CONSISTENT_PROC	4
 #define SPGIST_LEAF_CONSISTENT_PROC		5
-#define SPGISTNProc						5
+#define SPGIST_COMPRESS_PROC			6
+#define SPGISTNProc						6
 
 /*
  * Argument structs for spg_config method
@@ -44,6 +45,7 @@ typedef struct spgConfigOut
 {
 	Oid			prefixType;		/* Data type of inner-tuple prefixes */
 	Oid			labelType;		/* Data type of inner-tuple node labels */
+	Oid			leafType;		/* Data type of leaf (type of SPGIST_COMPRESS_PROC output) */
 	bool		canReturnData;	/* Opclass can reconstruct original data */
 	bool		longValuesOK;	/* Opclass can cope with values > 1 page */
 } spgConfigOut;
@@ -188,6 +190,19 @@ typedef struct spgLeafConsistentOut
 	double	   *distances;		/* associated distances */
 } spgLeafConsistentOut;
 
+/*
+ * Argument structs for spg_compress method
+ */
+typedef struct spgCompressIn
+{
+	Datum		datum;			/* data to be compressed for storage,
+								 * can be toasted */
+} spgCompressIn;
+
+typedef struct spgCompressOut
+{
+	Datum		datum;			/* compressed data to be stored at leaf */
+} spgCompressOut;
 
 /* spgutils.c */
 extern bytea *spgoptions(Datum reloptions, bool validate);

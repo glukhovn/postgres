@@ -1899,21 +1899,50 @@ spgdoinsert(Relation index, SpGistState *state,
 	FmgrInfo   *procinfo = NULL;
 
 	/*
+	 * Prepare the leaf datum to insert.
+	 *
+	 * If there is an optional "compress" method, call it to form the leaf
+	 * datum from the input datum. Otherwise we will store the input datum as
+	 * is. (We have to detoast it, though. We assume the "compress" method to
+	 * return an untoasted value.)
+	 */
+	if (!isnull)
+	{
+		if (OidIsValid(index_getprocid(index, 1, SPGIST_COMPRESS_PROC)))
+		{
+			spgCompressIn in;
+			spgCompressIn out;
+			FmgrInfo   *compress = index_getprocinfo(index, 1,
+													 SPGIST_COMPRESS_PROC);
+
+			in.datum = datum;
+
+			FunctionCall2Coll(compress,
+							  index->rd_indcollation[0],
+							  PointerGetDatum(&in),
+							  PointerGetDatum(&out));
+
+			leafDatum = out.datum;
+		}
+		else
+		{
+			Assert(state->attLeafType.type == state->attType.type);
+
+			if (state->attType.attlen == -1)
+				leafDatum = PointerGetDatum(PG_DETOAST_DATUM(datum));
+			else
+				leafDatum = datum;
+		}
+	}
+	else
+		leafDatum = (Datum) 0;
+
+	/*
 	 * Look up FmgrInfo of the user-defined choose function once, to save
 	 * cycles in the loop below.
 	 */
 	if (!isnull)
 		procinfo = index_getprocinfo(index, 1, SPGIST_CHOOSE_PROC);
-
-	/*
-	 * Since we don't use index_form_tuple in this AM, we have to make sure
-	 * value to be inserted is not toasted; FormIndexDatum doesn't guarantee
-	 * that.
-	 */
-	if (!isnull && state->attType.attlen == -1)
-		datum = PointerGetDatum(PG_DETOAST_DATUM(datum));
-
-	leafDatum = datum;
 
 	/*
 	 * Compute space needed for a leaf tuple containing the given datum.
@@ -1923,7 +1952,7 @@ spgdoinsert(Relation index, SpGistState *state,
 	 */
 	if (!isnull)
 		leafSize = SGLTHDRSZ + sizeof(ItemIdData) +
-			SpGistGetTypeSize(&state->attType, leafDatum);
+			SpGistGetTypeSize(&state->attLeafType, leafDatum);
 	else
 		leafSize = SGDTSIZE + sizeof(ItemIdData);
 
@@ -2138,7 +2167,7 @@ spgdoinsert(Relation index, SpGistState *state,
 					{
 						leafDatum = out.result.matchNode.restDatum;
 						leafSize = SGLTHDRSZ + sizeof(ItemIdData) +
-							SpGistGetTypeSize(&state->attType, leafDatum);
+							SpGistGetTypeSize(&state->attLeafType, leafDatum);
 					}
 
 					/*

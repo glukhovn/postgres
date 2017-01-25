@@ -26,6 +26,7 @@
 #include "utils/regproc.h"
 #include "utils/syscache.h"
 
+#define SPGIST_OPTIONAL_PROCS_MASK (((uint64) 1) << SPGIST_COMPRESS_PROC)
 
 /*
  * Validator for an SP-GiST opclass.
@@ -104,6 +105,7 @@ spgvalidate(Oid opclassoid)
 			case SPGIST_CHOOSE_PROC:
 			case SPGIST_PICKSPLIT_PROC:
 			case SPGIST_INNER_CONSISTENT_PROC:
+			case SPGIST_COMPRESS_PROC:
 				ok = check_amproc_signature(procform->amproc, VOIDOID, true,
 											2, 2, INTERNALOID, INTERNALOID);
 				break;
@@ -224,6 +226,8 @@ spgvalidate(Oid opclassoid)
 		{
 			if ((thisgroup->functionset & (((uint64) 1) << i)) != 0)
 				continue;		/* got it */
+			if ((SPGIST_OPTIONAL_PROCS_MASK & (((uint64) 1) << i)) != 0)
+				continue;		/* support function is optional */
 			ereport(INFO,
 					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 					 errmsg("operator family \"%s\" of access method %s is missing support function %d for type %s",

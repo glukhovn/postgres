@@ -74,8 +74,10 @@ pairingheap_SpGistSearchItem_cmp(const pairingheap_node *a,
 static void
 spgFreeSearchItem(SpGistScanOpaque so, SpGistSearchItem *item)
 {
-	if (!so->state.attType.attbyval &&
-		DatumGetPointer(item->value) != NULL)
+	SpGistTypeDesc *itemType =
+		item->isLeaf ? &so->state.attLeafType : &so->state.attType;
+
+	if (!itemType->attbyval && DatumGetPointer(item->value) != NULL)
 		pfree(DatumGetPointer(item->value));
 
 	if (item->traversalValue)
@@ -375,8 +377,8 @@ spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointerData heapPtr,
 	item->heap = heapPtr;
 	/* copy value to queue cxt out of tmp cxt */
 	item->value = isnull ? (Datum) 0 :
-		datumCopy(leafValue, so->state.attType.attbyval,
-				  so->state.attType.attlen);
+		datumCopy(leafValue, so->state.attLeafType.attbyval,
+				  so->state.attLeafType.attlen);
 	item->traversalValue = NULL;
 	item->isLeaf = true;
 	item->recheckQual = recheckQual;
