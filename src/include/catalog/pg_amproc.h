@@ -345,6 +345,18 @@ DATA(insert (	5000   603 603 2 5013 ));
 DATA(insert (	5000   603 603 3 5014 ));
 DATA(insert (	5000   603 603 4 5015 ));
 DATA(insert (	5000   603 603 5 5016 ));
+DATA(insert (	5007   718 718 1 5009 ));
+DATA(insert (	5007   718 718 2 5013 ));
+DATA(insert (	5007   718 718 3 5014 ));
+DATA(insert (	5007   718 718 4 5015 ));
+DATA(insert (	5007   718 718 5 5016 ));
+DATA(insert (	5007   718 718 6 5010 ));
+DATA(insert (	5008   604 604 1 5009 ));
+DATA(insert (	5008   604 604 2 5013 ));
+DATA(insert (	5008   604 604 3 5014 ));
+DATA(insert (	5008   604 604 4 5015 ));
+DATA(insert (	5008   604 604 5 5016 ));
+DATA(insert (	5008   604 604 6 5011 ));
 
 /* BRIN opclasses */
 /* minmax bytea */

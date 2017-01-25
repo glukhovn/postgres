@@ -142,6 +142,48 @@
       </entry>
      </row>
      <row>
+      <entry><literal>circle_ops</></entry>
+      <entry><type>circle</></entry>
+      <entry>
+       <literal>&lt;&lt;</>
+       <literal>&amp;&lt;</>
+       <literal>&amp;&amp;</>
+       <literal>&amp;&gt;</>
+       <literal>&gt;&gt;</>
+       <literal>~=</>
+       <literal>@&gt;</>
+       <literal>&lt;@</>
+       <literal>&amp;&lt;|</>
+       <literal>&lt;&lt;|</>
+       <literal>|&gt;&gt;</>
+       <literal>|&amp;&gt;</>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>poly_ops</></entry>
+      <entry><type>polygon</></entry>
+      <entry>
+       <literal>&lt;&lt;</>
+       <literal>&amp;&lt;</>
+       <literal>&amp;&amp;</>
+       <literal>&amp;&gt;</>
+       <literal>&gt;&gt;</>
+       <literal>~=</>
+       <literal>@&gt;</>
+       <literal>&lt;@</>
+       <literal>&amp;&lt;|</>
+       <literal>&lt;&lt;|</>
+       <literal>|&gt;&gt;</>
+       <literal>|&amp;&gt;</>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</>
+      </entry>
+     </row>
+     <row>
       <entry><literal>text_ops</></entry>
       <entry><type>text</></entry>
       <entry>

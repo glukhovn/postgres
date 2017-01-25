@@ -97,3 +97,291 @@ SELECT '' as five, c1.f1 AS one, c2.f1 AS two, (c1.f1 <-> c2.f1) AS distance
       | <(1,2),3>      | <(100,200),10> | 208.370729772479
 (5 rows)
 
+--
+-- Test the SP-GiST index
+--
+CREATE TEMPORARY TABLE quad_circle_tbl (id int, c circle);
+INSERT INTO quad_circle_tbl
+	SELECT (x - 1) * 100 + y, circle(point(x * 10, y * 10), 1 + (x + y) % 10)
+	FROM generate_series(1, 100) x,
+		 generate_series(1, 100) y;
+INSERT INTO quad_circle_tbl
+	SELECT i, '<(200, 300), 5>'
+	FROM generate_series(10001, 11000) AS i;
+INSERT INTO quad_circle_tbl
+	VALUES
+		(11001, NULL),
+		(11002, NULL),
+		(11003, '<(0,100), infinity>'),
+		(11004, '<(-infinity,0),1000>'),
+		(11005, '<(infinity,-infinity),infinity>');
+CREATE INDEX quad_circle_tbl_idx ON quad_circle_tbl USING spgist(c);
+-- get reference results for ORDER BY distance from seq scan
+SET enable_seqscan = ON;
+SET enable_indexscan = OFF;
+SET enable_bitmapscan = OFF;
+CREATE TEMP TABLE quad_circle_tbl_ord_seq1 AS
+SELECT rank() OVER (ORDER BY c <-> point '123,456') n, c <-> point '123,456' dist, id
+FROM quad_circle_tbl;
+CREATE TEMP TABLE quad_circle_tbl_ord_seq2 AS
+SELECT rank() OVER (ORDER BY c <-> point '123,456') n, c <-> point '123,456' dist, id
+FROM quad_circle_tbl WHERE c <@ circle '<(300,400),200>';
+-- check results results from index scan
+SET enable_seqscan = OFF;
+SET enable_indexscan = OFF;
+SET enable_bitmapscan = ON;
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c << circle '<(300,400),200>';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c << '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c << '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c << circle '<(300,400),200>';
+ count 
+-------
+   891
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c &< circle '<(300,400),200>';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c &< '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c &< '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c &< circle '<(300,400),200>';
+ count 
+-------
+  5901
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c && circle '<(300,400),200>';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c && '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c && '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c && circle '<(300,400),200>';
+ count 
+-------
+  2334
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c &> circle '<(300,400),200>';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c &> '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c &> '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c &> circle '<(300,400),200>';
+ count 
+-------
+ 10000
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c >> circle '<(300,400),200>';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c >> '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c >> '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c >> circle '<(300,400),200>';
+ count 
+-------
+  4990
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c <<| circle '<(300,400),200>';
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c <<| '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c <<| '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c <<| circle '<(300,400),200>';
+ count 
+-------
+  1890
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c &<| circle '<(300,400),200>';
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c &<| '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c &<| '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c &<| circle '<(300,400),200>';
+ count 
+-------
+  6900
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c |&> circle '<(300,400),200>';
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c |&> '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c |&> '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c |&> circle '<(300,400),200>';
+ count 
+-------
+  9000
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c |>> circle '<(300,400),200>';
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c |>> '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c |>> '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c |>> circle '<(300,400),200>';
+ count 
+-------
+  3990
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c @> circle '<(300,400),1>';
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c @> '<(300,400),1>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c @> '<(300,400),1>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c @> circle '<(300,400),1>';
+ count 
+-------
+     2
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c <@ circle '<(300,400),200>';
+                         QUERY PLAN                         
+------------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c <@ '<(300,400),200>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c <@ '<(300,400),200>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c <@ circle '<(300,400),200>';
+ count 
+-------
+  2181
+(1 row)
+
+EXPLAIN (COSTS OFF)
+SELECT count(*) FROM quad_circle_tbl WHERE c ~= circle '<(300,400),1>';
+                        QUERY PLAN                        
+----------------------------------------------------------
+ Aggregate
+   ->  Bitmap Heap Scan on quad_circle_tbl
+         Recheck Cond: (c ~= '<(300,400),1>'::circle)
+         ->  Bitmap Index Scan on quad_circle_tbl_idx
+               Index Cond: (c ~= '<(300,400),1>'::circle)
+(5 rows)
+
+SELECT count(*) FROM quad_circle_tbl WHERE c ~= circle '<(300,400),1>';
+ count 
+-------
+     1
+(1 row)
+
+-- test ORDER BY distance
+SET enable_indexscan = ON;
+SET enable_bitmapscan = OFF;
+EXPLAIN (COSTS OFF)
+SELECT rank() OVER (ORDER BY c <-> point '123,456') n, c <-> point '123,456' dist, id
+FROM quad_circle_tbl;
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ WindowAgg
+   ->  Index Scan using quad_circle_tbl_idx on quad_circle_tbl
+         Order By: (c <-> '(123,456)'::point)
+(3 rows)
+
+CREATE TEMP TABLE quad_circle_tbl_ord_idx1 AS
+SELECT rank() OVER (ORDER BY c <-> point '123,456') n, c <-> point '123,456' dist, id
+FROM quad_circle_tbl;
+SELECT *
+FROM quad_circle_tbl_ord_seq1 seq FULL JOIN quad_circle_tbl_ord_idx1 idx
+	ON seq.n = idx.n AND seq.id = idx.id AND
+		(seq.dist = idx.dist OR seq.dist IS NULL AND idx.dist IS NULL)
+WHERE seq.id IS NULL OR idx.id IS NULL;
+ n | dist | id | n | dist | id 
+---+------+----+---+------+----
+(0 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT rank() OVER (ORDER BY c <-> point '123,456') n, c <-> point '123,456' dist, id
+FROM quad_circle_tbl WHERE c <@ circle '<(300,400),200>';
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ WindowAgg
+   ->  Index Scan using quad_circle_tbl_idx on quad_circle_tbl
+         Index Cond: (c <@ '<(300,400),200>'::circle)
+         Order By: (c <-> '(123,456)'::point)
+(4 rows)
+
+CREATE TEMP TABLE quad_circle_tbl_ord_idx2 AS
+SELECT rank() OVER (ORDER BY c <-> point '123,456') n, c <-> point '123,456' dist, id
+FROM quad_circle_tbl WHERE c <@ circle '<(300,400),200>';
+SELECT *
+FROM quad_circle_tbl_ord_seq2 seq FULL JOIN quad_circle_tbl_ord_idx2 idx
+	ON seq.n = idx.n AND seq.id = idx.id AND
+		(seq.dist = idx.dist OR seq.dist IS NULL AND idx.dist IS NULL)
+WHERE seq.id IS NULL OR idx.id IS NULL;
+ n | dist | id | n | dist | id 
+---+------+----+---+------+----
+(0 rows)
+
+RESET enable_seqscan;
+RESET enable_indexscan;
+RESET enable_bitmapscan;

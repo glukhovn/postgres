@@ -74,9 +74,11 @@
 #include "postgres.h"
 
 #include "access/spgist.h"
+#include "access/spgist_private.h"
 #include "access/stratnum.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
+#include "utils/fmgroids.h"
 #include "utils/geo_decls.h"
 
 /*
@@ -366,6 +368,31 @@ overAbove4D(RectBox *rect_box, RangeBox *query)
 	return overHigher2D(&rect_box->range_box_y, &query->right);
 }
 
+/* Lower bound for the distance between point and rect_box */
+static double
+pointToRectBoxDistance(Point *point, RectBox *rect_box)
+{
+	double		dx;
+	double		dy;
+
+	if (point->x < rect_box->range_box_x.left.low)
+		dx = rect_box->range_box_x.left.low - point->x;
+	else if (point->x > rect_box->range_box_x.right.high)
+		dx = point->x - rect_box->range_box_x.right.high;
+	else
+		dx = 0;
+
+	if (point->y < rect_box->range_box_y.left.low)
+		dy = rect_box->range_box_y.left.low - point->y;
+	else if (point->y > rect_box->range_box_y.right.high)
+		dy = point->y - rect_box->range_box_y.right.high;
+	else
+		dy = 0;
+
+	return HYPOT(dx, dy);
+}
+
+
 /*
  * SP-GiST config function
  */
@@ -391,7 +418,7 @@ spg_box_quad_choose(PG_FUNCTION_ARGS)
 	spgChooseIn *in = (spgChooseIn *) PG_GETARG_POINTER(0);
 	spgChooseOut *out = (spgChooseOut *) PG_GETARG_POINTER(1);
 	BOX		   *centroid = DatumGetBoxP(in->prefixDatum),
-			   *box = DatumGetBoxP(in->datum);
+			   *box = DatumGetBoxP(in->leafDatum);
 
 	out->resultType = spgMatchNode;
 	out->result.matchNode.restDatum = BoxPGetDatum(box);
@@ -473,6 +500,78 @@ spg_box_quad_picksplit(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
+/* get circle bounding box */
+static BOX *
+circle_bbox(CIRCLE *circle)
+{
+	BOX		   *bbox = (BOX *) palloc(sizeof(BOX));
+
+	bbox->high.x = circle->center.x + circle->radius;
+	bbox->low.x = circle->center.x - circle->radius;
+	bbox->high.y = circle->center.y + circle->radius;
+	bbox->low.y = circle->center.y - circle->radius;
+
+	if (isnan(bbox->low.x))
+	{
+		double tmp = bbox->low.x;
+		bbox->low.x = bbox->high.x;
+		bbox->high.x = tmp;
+	}
+
+	if (isnan(bbox->low.y))
+	{
+		double tmp = bbox->low.y;
+		bbox->low.y = bbox->high.y;
+		bbox->high.y = tmp;
+	}
+
+	return bbox;
+}
+
+static bool
+is_bounding_box_test_exact(StrategyNumber strategy)
+{
+	switch (strategy)
+	{
+		case RTLeftStrategyNumber:
+		case RTOverLeftStrategyNumber:
+		case RTOverRightStrategyNumber:
+		case RTRightStrategyNumber:
+		case RTOverBelowStrategyNumber:
+		case RTBelowStrategyNumber:
+		case RTAboveStrategyNumber:
+		case RTOverAboveStrategyNumber:
+			return true;
+
+		default:
+			return false;
+	}
+}
+
+static BOX *
+spg_box_quad_get_scankey_bbox(ScanKey sk, bool *recheck)
+{
+	switch (sk->sk_subtype)
+	{
+		case BOXOID:
+			return DatumGetBoxP(sk->sk_argument);
+
+		case CIRCLEOID:
+			if (recheck && !is_bounding_box_test_exact(sk->sk_strategy))
+				*recheck = true;
+			return circle_bbox(DatumGetCircleP(sk->sk_argument));
+
+		case POLYGONOID:
+			if (recheck && !is_bounding_box_test_exact(sk->sk_strategy))
+				*recheck = true;
+			return &DatumGetPolygonP(sk->sk_argument)->boundbox;
+
+		default:
+			elog(ERROR, "unrecognized scankey subtype: %d", sk->sk_subtype);
+			return NULL;
+	}
+}
+
 /*
  * SP-GiST inner consistent function
  */
@@ -488,17 +587,6 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	RangeBox   *centroid,
 			  **queries;
 
-	if (in->allTheSame)
-	{
-		/* Report that all nodes should be visited */
-		out->nNodes = in->nNodes;
-		out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
-		for (i = 0; i < in->nNodes; i++)
-			out->nodeNumbers[i] = i;
-
-		PG_RETURN_VOID();
-	}
-
 	/*
 	 * We are saving the traversal value or initialize it an unbounded one, if
 	 * we have just begun to walk the tree.
@@ -508,6 +596,40 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	else
 		rect_box = initRectBox();
 
+	if (in->allTheSame)
+	{
+		/* Report that all nodes should be visited */
+		out->nNodes = in->nNodes;
+		out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
+		for (i = 0; i < in->nNodes; i++)
+			out->nodeNumbers[i] = i;
+
+		if (in->norderbys > 0 && in->nNodes > 0)
+		{
+			double	   *distances = palloc(sizeof(double) * in->norderbys);
+			int			j;
+
+			for (j = 0; j < in->norderbys; j++)
+			{
+				Point	   *pt = DatumGetPointP(in->orderbyKeys[j].sk_argument);
+
+				distances[j] = pointToRectBoxDistance(pt, rect_box);
+			}
+
+			out->distances = (double **) palloc(sizeof(double *) * in->nNodes);
+			out->distances[0] = distances;
+
+			for (i = 1; i < in->nNodes; i++)
+			{
+				out->distances[i] = palloc(sizeof(double) * in->norderbys);
+				memcpy(out->distances[i], distances,
+					   sizeof(double) * in->norderbys);
+			}
+		}
+
+		PG_RETURN_VOID();
+	}
+
 	/*
 	 * We are casting the prefix and queries to RangeBoxes for ease of the
 	 * following operations.
@@ -515,12 +637,18 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	centroid = getRangeBox(DatumGetBoxP(in->prefixDatum));
 	queries = (RangeBox **) palloc(in->nkeys * sizeof(RangeBox *));
 	for (i = 0; i < in->nkeys; i++)
-		queries[i] = getRangeBox(DatumGetBoxP(in->scankeys[i].sk_argument));
+	{
+		BOX		   *box = spg_box_quad_get_scankey_bbox(&in->scankeys[i], NULL);
+
+		queries[i] = getRangeBox(box);
+	}
 
 	/* Allocate enough memory for nodes */
 	out->nNodes = 0;
 	out->nodeNumbers = (int *) palloc(sizeof(int) * in->nNodes);
 	out->traversalValues = (void **) palloc(sizeof(void *) * in->nNodes);
+	if (in->norderbys > 0)
+		out->distances = (double **) palloc(sizeof(double *) * in->nNodes);
 
 	/*
 	 * We switch memory context, because we want to allocate memory for new
@@ -598,6 +726,22 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 		{
 			out->traversalValues[out->nNodes] = next_rect_box;
 			out->nodeNumbers[out->nNodes] = quadrant;
+
+			if (in->norderbys > 0)
+			{
+				double	   *distances = palloc(sizeof(double) * in->norderbys);
+				int			j;
+
+				out->distances[out->nNodes] = distances;
+
+				for (j = 0; j < in->norderbys; j++)
+				{
+					Point *pt = DatumGetPointP(in->orderbyKeys[j].sk_argument);
+
+					distances[j] = pointToRectBoxDistance(pt, next_rect_box);
+				}
+			}
+
 			out->nNodes++;
 		}
 		else
@@ -638,7 +782,9 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 	for (i = 0; i < in->nkeys; i++)
 	{
 		StrategyNumber strategy = in->scankeys[i].sk_strategy;
-		Datum		query = in->scankeys[i].sk_argument;
+		BOX		   *box = 	spg_box_quad_get_scankey_bbox(&in->scankeys[i],
+														  &out->recheck);
+		Datum		query = BoxPGetDatum(box);
 
 		switch (strategy)
 		{
@@ -711,5 +857,64 @@ spg_box_quad_leaf_consistent(PG_FUNCTION_ARGS)
 			break;
 	}
 
+	if (flag && in->norderbys > 0)
+	{
+		Oid			distfnoid = in->orderbykeys[0].sk_func.fn_oid;
+
+		spg_point_distance(leaf, in->norderbys, in->orderbykeys,
+						   &out->distances, false);
+
+		/* Recheck is necessary when computing distance to polygon or circle */
+		out->recheckDistances = distfnoid == F_DIST_CPOINT ||
+								distfnoid == F_DIST_POLYP;
+	}
+
 	PG_RETURN_BOOL(flag);
+}
+
+
+/*
+ * SP-GiST config function for 2-D types that are lossy represented by their
+ * bounding boxes
+ */
+Datum
+spg_bbox_quad_config(PG_FUNCTION_ARGS)
+{
+	spgConfigOut *cfg = (spgConfigOut *) PG_GETARG_POINTER(1);
+
+	cfg->prefixType = BOXOID;	/* A type represented by its bounding box */
+	cfg->labelType = VOIDOID;	/* We don't need node labels. */
+	cfg->leafType = BOXOID;
+	cfg->canReturnData = false;
+	cfg->longValuesOK = false;
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * SP-GiST compress function for circles
+ */
+Datum
+spg_circle_quad_compress(PG_FUNCTION_ARGS)
+{
+	spgCompressIn *in = (spgCompressIn *) PG_GETARG_POINTER(0);
+	spgCompressOut *out = (spgCompressOut *) PG_GETARG_POINTER(1);
+
+	out->datum = BoxPGetDatum(circle_bbox(DatumGetCircleP(in->datum)));
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * SP-GiST compress function for polygons
+ */
+Datum
+spg_poly_quad_compress(PG_FUNCTION_ARGS)
+{
+	spgCompressIn *in = (spgCompressIn *) PG_GETARG_POINTER(0);
+	spgCompressOut *out = (spgCompressOut *) PG_GETARG_POINTER(1);
+
+	out->datum = BoxPGetDatum(box_copy(&DatumGetPolygonP(in->datum)->boundbox));
+
+	PG_RETURN_VOID();
 }

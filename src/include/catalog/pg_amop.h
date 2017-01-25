@@ -886,6 +886,40 @@ DATA(insert (	5000	603  603 11 s	2573	4000 0 ));
 DATA(insert (	5000	603  603 12 s	2572	4000 0 ));
 
 /*
+ * SP-GiST circle_ops
+ */
+DATA(insert (	5007	718  718  1 s	1506	4000 0 ));
+DATA(insert (	5007	718  718  2 s	1507	4000 0 ));
+DATA(insert (	5007	718  718  3 s	1513	4000 0 ));
+DATA(insert (	5007	718  718  4 s	1508	4000 0 ));
+DATA(insert (	5007	718  718  5 s	1509	4000 0 ));
+DATA(insert (	5007	718  718  6 s	1512	4000 0 ));
+DATA(insert (	5007	718  718  7 s	1511	4000 0 ));
+DATA(insert (	5007	718  718  8 s	1510	4000 0 ));
+DATA(insert (	5007	718  718  9 s	2589	4000 0 ));
+DATA(insert (	5007	718  718 10 s	1515	4000 0 ));
+DATA(insert (	5007	718  718 11 s	1514	4000 0 ));
+DATA(insert (	5007	718  718 12 s	2590	4000 0 ));
+DATA(insert (	5007	718  600 15 o	3291	4000 1970 ));
+
+/*
+ * SP-GiST poly_ops (supports polygons)
+ */
+DATA(insert (	5008   604	604  1 s	 485	4000 0 ));
+DATA(insert (	5008   604	604  2 s	 486	4000 0 ));
+DATA(insert (	5008   604	604  3 s	 492	4000 0 ));
+DATA(insert (	5008   604	604  4 s	 487	4000 0 ));
+DATA(insert (	5008   604	604  5 s	 488	4000 0 ));
+DATA(insert (	5008   604	604  6 s	 491	4000 0 ));
+DATA(insert (	5008   604	604  7 s	 490	4000 0 ));
+DATA(insert (	5008   604	604  8 s	 489	4000 0 ));
+DATA(insert (	5008   604	604  9 s	2575	4000 0 ));
+DATA(insert (	5008   604	604 10 s	2574	4000 0 ));
+DATA(insert (	5008   604	604 11 s	2577	4000 0 ));
+DATA(insert (	5008   604	604 12 s	2576	4000 0 ));
+DATA(insert (	5008   604	600 15 o	3289	4000 1970 ));
+
+/*
  * GiST inet_ops
  */
 DATA(insert (	3550	869 869 3 s		3552 783 0 ));
