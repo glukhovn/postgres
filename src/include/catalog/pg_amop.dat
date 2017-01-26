@@ -1401,6 +1401,10 @@
 { amopfamily => 'spgist/quad_point_ops', amoplefttype => 'point',
   amoprighttype => 'box', amopstrategy => '8', amopopr => '<@(point,box)',
   amopmethod => 'spgist' },
+{ amopfamily => 'spgist/quad_point_ops', amoplefttype => 'point',
+  amoprighttype => 'point', amopstrategy => '15', amopopr => '<->(point,point)',
+  amopmethod => 'spgist', amoppurpose => 'o',
+  amopsortfamily => 'btree/float_ops' },
 
 # SP-GiST kd_point_ops
 { amopfamily => 'spgist/kd_point_ops', amoplefttype => 'point',
@@ -1421,6 +1425,10 @@
 { amopfamily => 'spgist/kd_point_ops', amoplefttype => 'point',
   amoprighttype => 'box', amopstrategy => '8', amopopr => '<@(point,box)',
   amopmethod => 'spgist' },
+{ amopfamily => 'spgist/kd_point_ops', amoplefttype => 'point',
+  amoprighttype => 'point', amopstrategy => '15', amopopr => '<->(point,point)',
+  amopmethod => 'spgist', amoppurpose => 'o',
+  amopsortfamily => 'btree/float_ops' },
 
 # SP-GiST text_ops
 { amopfamily => 'spgist/text_ops', amoplefttype => 'text',

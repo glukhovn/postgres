@@ -64,12 +64,13 @@
 
   <table id="spgist-builtin-opclasses-table">
    <title>Built-in <acronym>SP-GiST</acronym> Operator Classes</title>
-   <tgroup cols="3">
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
       <entry>Indexed Data Type</entry>
       <entry>Indexable Operators</entry>
+      <entry>Ordering Operators</entry>
      </row>
     </thead>
     <tbody>
@@ -84,6 +85,9 @@
        <literal>&gt;^</literal>
        <literal>~=</literal>
       </entry>
+      <entry>
+       <literal>&lt;-&gt;</literal>
+      </entry>
      </row>
      <row>
       <entry><literal>quad_point_ops</literal></entry>
@@ -95,6 +99,9 @@
        <literal>&gt;&gt;</literal>
        <literal>&gt;^</literal>
        <literal>~=</literal>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</literal>
       </entry>
      </row>
      <row>
@@ -110,6 +117,8 @@
        <literal>=</literal>
        <literal>&gt;&gt;</literal>
        <literal>@&gt;</literal>
+      </entry>
+      <entry>
       </entry>
      </row>
      <row>
@@ -129,6 +138,8 @@
        <literal>|&gt;&gt;</literal>
        <literal>|&amp;&gt;</literal>
       </entry>
+      <entry>
+      </entry>
      </row>
      <row>
       <entry><literal>poly_ops</literal></entry>
@@ -147,6 +158,8 @@
        <literal>|&gt;&gt;</literal>
        <literal>|&amp;&gt;</literal>
       </entry>
+      <entry>
+      </entry>      
      </row>
      <row>
       <entry><literal>text_ops</literal></entry>
@@ -162,6 +175,8 @@
        <literal>~&gt;=~</literal>
        <literal>~&gt;~</literal>
        <literal>^@</literal>
+      </entry>
+      <entry>
       </entry>
      </row>
      <row>
@@ -180,6 +195,8 @@
        <literal>&lt;=</literal>
        <literal>=</literal>
       </entry>
+      <entry>
+      </entry>
      </row>
     </tbody>
    </tgroup>
@@ -190,6 +207,12 @@
   <literal>quad_point_ops</literal> is the default.  <literal>kd_point_ops</literal>
   supports the same operators but uses a different index data structure which
   may offer better performance in some applications.
+ </para>
+ <para>
+  The <literal>quad_point_ops</literal>, <literal>kd_point_ops</literal>
+  classes support the <literal>&lt;-&gt;</literal> ordering operator, which enables
+  the k-nearest neighbor (<literal>k-NN</literal>) search over indexed
+  point datasets.
  </para>
 
 </sect1>

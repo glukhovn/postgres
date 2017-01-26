@@ -457,4 +457,8 @@ extern void spgPageIndexMultiDelete(SpGistState *state, Page page,
 extern bool spgdoinsert(Relation index, SpGistState *state,
 			ItemPointer heapPtr, Datum datum, bool isnull);
 
+/* spgproc.c */
+extern void spg_point_distance(Datum to, int norderbys,
+				   ScanKey orderbyKeys, double **distances, bool isLeaf);
+
 #endif							/* SPGIST_PRIVATE_H */
