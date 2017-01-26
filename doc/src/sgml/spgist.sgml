@@ -637,7 +637,6 @@ typedef struct spgInnerConsistentIn
     Datum       reconstructedValue;     /* value reconstructed at parent */
     void       *traversalValue; /* opclass-specific traverse value */
     MemoryContext traversalMemoryContext;   /* put new traverse values here */
-    Datum		suppValue		/* supplimentary value of parent */
     int         level;          /* current level (counting from zero) */
     bool        returnData;     /* original data must be returned? */
 
@@ -656,7 +655,6 @@ typedef struct spgInnerConsistentOut
     int        *levelAdds;      /* increment level by this much for each */
     Datum      *reconstructedValues;    /* associated reconstructed values */
     void      **traversalValues;        /* opclass-specific traverse values */
-    Datum      *suppValues;             /* any additional data implementation needs to be stored in the child nodes */
     double    **distances;              /* associated distances */
 } spgInnerConsistentOut;
 </programlisting>
@@ -684,9 +682,6 @@ typedef struct spgInnerConsistentOut
        on the parent index tuple, or NULL at the root level.
        <structfield>traversalMemoryContext</structfield> is the memory context in which
        to store output traverse values (see below).
-       <structfield>suppValue</structfield> is any additional value that an implementation
-       decided to store for the parent node (<literal>(Datum) 0</literal> in case the 
-       current node is root).
        <structfield>level</structfield> is the current inner tuple's level, starting at
        zero for the root level.
        <structfield>returnData</structfield> is <literal>true</literal> if reconstructed data is
@@ -719,8 +714,6 @@ typedef struct spgInnerConsistentOut
        of <structname>spgConfigOut</structname>.<structfield>leafType</structfield> type
        reconstructed for each child node to be visited; otherwise, leave
        <structfield>reconstructedValues</structfield> as NULL.
-       <structfield>suppValues</structfield> serves the similiar purpose of holding
-       the implementation-defined data for the inner nodes.
        <structfield>distances</structfield>> if the ordered search is carried out,
        the implementation is supposed to fill them in accordance to the
        ordering operators provided in <structfield>orderbyKeys</structfield>>
@@ -734,7 +727,7 @@ typedef struct spgInnerConsistentOut
        Note that the <function>inner_consistent</function> function is
        responsible for palloc'ing the
        <structfield>nodeNumbers</structfield>, <structfield>levelAdds</structfield>,
-       <structfield>distances</structfield>, <structfield>suppValues</structfield>,
+       <structfield>distances</structfield>,
        <structfield>reconstructedValues</structfield>, and
        <structfield>traversalValues</structfield> arrays in the current memory context.
        However, any output traverse values pointed to by
