@@ -64,12 +64,13 @@
 
   <table id="spgist-builtin-opclasses-table">
    <title>Built-in <acronym>SP-GiST</acronym> Operator Classes</title>
-   <tgroup cols="3">
+   <tgroup cols="4">
     <thead>
      <row>
       <entry>Name</entry>
       <entry>Indexed Data Type</entry>
       <entry>Indexable Operators</entry>
+      <entry>Ordering Operators</entry>
      </row>
     </thead>
     <tbody>
@@ -84,6 +85,9 @@
        <literal>&gt;^</>
        <literal>~=</>
       </entry>
+      <entry>
+       <literal>&lt;-&gt;</>
+      </entry>
      </row>
      <row>
       <entry><literal>quad_point_ops</></entry>
@@ -95,6 +99,9 @@
        <literal>&gt;&gt;</>
        <literal>&gt;^</>
        <literal>~=</>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</>
       </entry>
      </row>
      <row>
@@ -110,6 +117,8 @@
        <literal>=</>
        <literal>&gt;&gt;</>
        <literal>@&gt;</>
+      </entry>
+      <entry>
       </entry>
      </row>
      <row>
@@ -129,6 +138,8 @@
        <literal>|&gt;&gt;</literal>
        <literal>|&amp;&gt;</>
       </entry>
+      <entry>
+      </entry>
      </row>
      <row>
       <entry><literal>text_ops</></entry>
@@ -144,6 +155,8 @@
        <literal>~&gt;=~</>
        <literal>~&gt;~</>
       </entry>
+      <entry>
+      </entry>      
      </row>
      <row>
       <entry><literal>inet_ops</></entry>
@@ -161,6 +174,8 @@
        <literal>&lt;=</>
        <literal>=</>
       </entry>
+      <entry>
+      </entry>
      </row>
     </tbody>
    </tgroup>
@@ -171,6 +186,10 @@
   <literal>quad_point_ops</> is the default.  <literal>kd_point_ops</>
   supports the same operators but uses a different index data structure which
   may offer better performance in some applications.
+ </para>
+ <para>
+  By supporting the ordering &lt;-&gt; operator the quad_point_ops and kd_point_ops provide 
+  a user with the ability to perform a K-nearest-neighbour search over the indexed point dataset.
  </para>
 
 </sect1>

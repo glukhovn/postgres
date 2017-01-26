@@ -802,6 +802,7 @@ DATA(insert (	4015   600 600 5 s	508 4000 0 ));
 DATA(insert (	4015   600 600 10 s 509 4000 0 ));
 DATA(insert (	4015   600 600 6 s	510 4000 0 ));
 DATA(insert (	4015   600 603 8 s	511 4000 0 ));
+DATA(insert (	4015   600 600 15 o 517 4000 1970 ));
 
 /*
  * SP-GiST kd_point_ops
@@ -812,6 +813,7 @@ DATA(insert (	4016   600 600 5 s	508 4000 0 ));
 DATA(insert (	4016   600 600 10 s 509 4000 0 ));
 DATA(insert (	4016   600 600 6 s	510 4000 0 ));
 DATA(insert (	4016   600 603 8 s	511 4000 0 ));
+DATA(insert (	4016   600 600 15 o 517 4000 1970 ));
 
 /*
  * SP-GiST text_ops
