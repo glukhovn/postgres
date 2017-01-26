@@ -350,7 +350,6 @@ spgInitInnerConsistentIn(spgInnerConsistentIn *in, IndexScanDesc scan,
 	in->nodeLabels = spgExtractNodeLabels(&so->state, innerTuple);
 	in->norderbys = scan->numberOfOrderBys;
 	in->orderbyKeys = scan->orderByData;
-	in->suppValue = item->suppValue;
 }
 
 static void
@@ -435,10 +434,6 @@ spgInnerTest(Relation index, IndexScanDesc scan, SpGistSearchItem *item,
 			 */
 			newItem->traversalValue = (out.traversalValues) ?
 					out.traversalValues[i] : NULL;
-
-			newItem->suppValue = out.suppValues ?
-					datumCopy(out.suppValues[i], false,
-							  so->state.config.suppLen) : (Datum) 0;
 
 			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
 			distances = out.distances ? out.distances[i] : inf_distances;

@@ -146,7 +146,6 @@ typedef struct SpGistSearchItem
 	SPGistSearchItemState itemState;	/* see above */
 	Datum		value;			/* value reconstructed from parent or
 								 * leafValue if heaptuple */
-	Datum suppValue;			/* any additional value an opclass needs to be stored */
 	void	   *traversalValue; /* opclass-specific traverse value */
 	int			level;			/* level of items on this page */
 	struct SpGistSearchItem *next;	  /* list link */

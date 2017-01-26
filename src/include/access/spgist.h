@@ -46,9 +46,6 @@ typedef struct spgConfigOut
 	Oid			labelType;		/* Data type of inner-tuple node labels */
 	bool		canReturnData;	/* Opclass can reconstruct original data */
 	bool		longValuesOK;	/* Opclass can cope with values > 1 page */
-		/* If opclass needs to store any supplimentary data in nodes during the
-			  scan - the size of the structure */
-	int suppLen;
 } spgConfigOut;
 
 /*
@@ -143,7 +140,6 @@ typedef struct spgInnerConsistentIn
 	Datum		reconstructedValue; /* value reconstructed at parent */
 	void	   *traversalValue; /* opclass-specific traverse value */
 	MemoryContext traversalMemoryContext;	/* put new traverse values here */
-	Datum		suppValue;		/* supplimentary value of parent */
 	int			level;			/* current level (counting from zero) */
 	bool		returnData;		/* original data must be returned? */
 
@@ -162,7 +158,6 @@ typedef struct spgInnerConsistentOut
 	int		   *levelAdds;		/* increment level by this much for each */
 	Datum	   *reconstructedValues;	/* associated reconstructed values */
 	void	  **traversalValues;	/* opclass-specific traverse values */
-	Datum	   *suppValues;		/* any additional data implementation needs to be stored in the child nodes */
 	double	  **distances;		/* associated distances */
 } spgInnerConsistentOut;
 

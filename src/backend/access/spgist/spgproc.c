@@ -117,7 +117,6 @@ spgNewHeapItem(SpGistScanOpaque so, int level,
 				so->state.attType.attlen);
 	newItem->traversalValue = NULL;
 	newItem->itemState = recheck ? HEAP_RECHECK : HEAP_NORECHECK;
-	newItem->suppValue = (Datum) 0;
 	newItem->isnull = isnull;
 	return newItem;
 }
@@ -125,11 +124,6 @@ spgNewHeapItem(SpGistScanOpaque so, int level,
 void
 spgFreeSearchItem(SpGistScanOpaque so, SpGistSearchItem *item)
 {
-	if (so->state.config.suppLen > 0
-			&& DatumGetPointer(item->suppValue) != NULL
-			&& item->itemState == INNER)
-		pfree(DatumGetPointer(item->suppValue));
-
 	if (!so->state.attType.attbyval &&
 			DatumGetPointer(item->value) != NULL)
 		pfree(DatumGetPointer(item->value));
