@@ -8560,7 +8560,9 @@ ATExecAlterColumnType(AlteredTableInfo *tab, Relation rel,
 		if (!(foundDep->refclassid == TypeRelationId &&
 			  foundDep->refobjid == attTup->atttypid) &&
 			!(foundDep->refclassid == CollationRelationId &&
-			  foundDep->refobjid == attTup->attcollation))
+			  foundDep->refobjid == attTup->attcollation) &&
+			!(foundDep->refclassid == CompressionMethodRelationId &&
+			  foundDep->refobjid == attTup->attcompression))
 			elog(ERROR, "found unexpected dependency for column");
 
 		simple_heap_delete(depRel, &depTup->t_self);
