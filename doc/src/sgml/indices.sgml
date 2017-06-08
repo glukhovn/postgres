@@ -175,20 +175,16 @@ CREATE INDEX test1_id_index ON test1 (id);
   </para>
 
   <para>
-   B-tree indexes are also capable of optimizing <quote>nearest-neighbor</>
-   searches, such as
-<programlisting><![CDATA[
-SELECT * FROM events ORDER BY event_date <-> date '2017-05-05' LIMIT 10;
-]]>
-</programlisting>
-   which finds the ten events closest to a given target date.  The ability
-   to do this is again dependent on the particular operator class being used.
+   If used with an <link linkend="xindex-ordering-ops">ordering operator</link>, B-tree indexes
+   can optimize k-nearest neighbors (<acronym>k-NN</acronym>) search. 
    Built-in B-tree operator classes support distance ordering for data types
    <type>int2</>, <type>int4</>, <type>int8</>,
    <type>float4</>, <type>float8</>, <type>numeric</>,
    <type>timestamp with time zone</>, <type>timestamp without time zone</>,
    <type>time with time zone</>, <type>time without time zone</>,
    <type>date</>, <type>interval</>, <type>oid</>, <type>money</>.
+   To learn more about <acronym>k-NN</acronym> implementation, 
+   see <xref linkend="k-nn-search">.
   </para>
 
   <para>
@@ -299,11 +295,11 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
   </para>
 
   <para>
-   SP-GiST indexes, like GiST indexes, are also capable of optimizing
-   <quote>nearest-neighbor</> searches.  The ability to do this is again
-   dependent on the particular operator class being used.
-   In <xref linkend="spgist-builtin-opclasses-table">, operators that can be
-   used in this way are listed in the column <quote>Ordering Operators</>.
+   If used with an <link linkend="xindex-ordering-ops">ordering operator</link>, SP-GiST indexes 
+   can optimize <quote>nearest-neighbor</> search.
+   For SP-GiST operator classes that support distance ordering, the 
+   corresponding operator is specified in the <quote>Ordering Operators</>
+   column in <xref linkend="spgist-builtin-opclasses-table">.
   </para>
 
   <para>
@@ -1457,5 +1453,202 @@ SELECT target FROM tests WHERE subject = 'some-subject' AND success;
     </para>
    </listitem>
   </itemizedlist>
+ </sect1>
+
+
+ <sect1 id="k-nn-search">
+  <title>Using <acronym>k-NN</acronym> Algorithm for Optimizing Queries</title>
+
+  <para>
+    <productname>&productname;</productname> can optimize k-nearest neighbors 
+    (<acronym>k-NN</acronym>) search 
+    for B-tree, GiST, and SP-GiST index types. With these index types, 
+    you can use ordering operators that return the rows in the order
+    defined by the <literal>ORDER BY</literal> clause of the following type:
+    <programlisting>
+ORDER BY <replaceable>index_column</replaceable> <replaceable>operator</replaceable> <replaceable>constant</replaceable>
+</programlisting>
+    where <replaceable>operator</replaceable> is the supported ordering operator,
+    such as <literal>&lt;-&gt;</>.
+    In this case, <productname>&productname;</productname> uses a special scan 
+    strategy for <acronym>k-NN</acronym> search. 
+  </para>
+
+  <para>
+  For B-tree indexes, you can use only one ordering operator on the first index column.
+  GiST and SP-GiST do not limit the number of ordering operators you can use for k-NN search. 
+  For multicolumn GiST indexes, you can also use multiple ordering operators for each column
+  included into the multicolumn index. For example:
+  <programlisting>
+SELECT * FROM points ORDER BY <replaceable>column1</replaceable> <-> '(0, 0)', <replaceable>column2</replaceable> <-> '(1, 1)'
+</programlisting>
+where <replaceable>column1</replaceable> and <replaceable>column2</replaceable> 
+are index columns of the multicolumn GiST index.
+  </para>
+
+    <para>
+    You can run <acronym>k-NN</acronym> search for all built-in and
+    custom data types that support the concept of distance. In database 
+    queries, k-NN search can provide performance benefits for 
+    various use cases: georgraphic information systems (<acronym>GIS</acronym>),
+    classification problems (majority voting), clusterization,
+    looking for similar objects or nearest events, detecting 
+    duplications and typos, trigram matching, multimedia search, and more.
+  </para>
+
+
+  <para>
+    To natively implement <acronym>k-NN</acronym> search, 
+    <productname>&productname;</productname> uses distance-based
+    priority queue for index traversal. Depending on the index type,
+    the search algorithm will differ:
+
+  <itemizedlist>
+  <listitem>
+  <para>
+    For GiST and SP-GiST index types, the priority queue is based
+    on the pairing heap that can be effectively balanced. Inner nodes of the tree
+    represent the minimum bounding rectangle (<acronym>MBR</acronym>) for their children.
+    Leaf nodes store actual tuple entries.
+    <productname>&productname;</productname> uses a heuristic to maintain
+    the order by distance between the queue entries and the
+    target point defined by the search argurment. For inner nodes, the minimal
+    distance for the child node is calculated. For leaf nodes, the distance to
+    the tuple entry is used. In the tree nodes, leaf nodes are stored before the 
+    inner nodes in the list, so tuple entries are processed first. Each time
+    a result is returned from the queue, it is guaranteed to be the closest
+    one to the target point. Thus, there is no need to scan all nodes.
+    Once the required k entries are extracted from the queue,
+    search can stop.
+  </para>
+  </listitem>
+
+  <listitem>
+  <para>
+    B-tree indexes use a simpler algorithm. 
+    If the target point falls into the scan range,
+    <productname>&productname;</productname> performs bidirectional scan starting from this point,
+    advancing at each step in the direction that includes the nearest point.
+    Otherwise, a simple unidirectional scan in the right direction is used. 
+  </para>
+  </listitem>
+  </itemizedlist>
+  </para>
+
+  <para>
+    <acronym>k-NN</acronym> search performance has logarithmic dependence
+    on the data size and linear dependence on k. As k tends to the number
+    of rows in the table, the <acronym>k-NN</acronym> search time gradually
+    tends to a naive algorithm that consecutively reads the whole table,
+    sorts the data, and returns the first k entries. Since
+    <acronym>k-NN</acronym> approach reduces the number of rows that need to be sorted,
+    you can get significant performance benefits if the total number of rows
+    returned by a query is big, or the rows are long. 
+    In the worst-case scenario, when all points are equally far from the
+    target point, you have to traverse the whole index, but 
+    performance gain can still be achieved because only k entries need to be
+    read from the table, at random.
+  </para>
+  <para>
+    Another benefit of using <acronym>k-NN</acronym> algorithm is simpler logic:
+    you do not need to know the search <quote>radius</quote> in advance, and 
+    can resume the search if required.
+  </para>
+
+  <sect2>
+    <title>Examples</title>
+
+  <para>
+    Suppose you have the <structname>spots</structname> table containing coordinates
+    of multiple points. To find ten closest points to the given target point,
+    you can run the following query:
+  <programlisting>
+SELECT coordinates, (coordinates <-> '5.0,5.0'::point) AS dist 
+FROM spots ORDER BY dist ASC LIMIT 10;
+
+             coordinates             |       dist       
+-------------------------------------+------------------
+ (3.57192993164062,6.51727240153665) | 2.08362656457647
+ (3.49502563476562,6.49134782128243) | 2.11874164636854
+ (3.4393,6.4473)                     | 2.12848814420001
+ (3.31787109375,6.50089913799597)    | 2.25438592075067
+ (2.6323,6.4779)                     | 2.79109148900569
+ (2.66349792480469,6.53159856871478) | 2.79374947392946
+ (1.84102535247803,6.27874198581057) |  3.4079762161672
+ (1.2255,6.1228)                     | 3.93796014327215
+ (1.22772216796875,6.15693947094637) | 3.94570513108469
+ (9.6977,4.044503)                   | 4.79388775494473
+(10 rows)
+</programlisting>
+  </para>
+
+  <para>If you need to find ten closest points that contain the word "mars"
+   in their names, you can use a multi-column index:
+
+<programlisting>
+CREATE INDEX pt_fts_idx ON spots USING gist(point, to_tsvector('english',asciiname));
+
+SELECT asciiname,point, (point <->'5.0,5.0'::point) AS dist
+FROM spots WHERE to_tsvector('english', asciiname)
+@@ to_tsquery('english','mars') ORDER BY dist ASC LIMIT 10;
+</programlisting>
+  </para>
+
+  <para>
+    Suppose you have the <structname>events</structname> table that 
+    describes arbitrary historical events. To select five events that 
+    happened close to the launch of the first satellite Sputnik-1
+    on October 4, 1957, run:
+    <programlisting>
+SELECT date, event,  ('1957-10-04'::date <-> date) AS dist 
+FROM events ORDER BY dist ASC LIMIT 5;
+
+    date    |                 event                     | dist
+------------+-------------------------------------------+------
+ 1957-10-04 | Gregory T Linteris, astronaut, is born    |    0
+            | in New Jersey                             |
+ 1957-10-04 | USSR launches the first artificial        |    0
+            | Earth satellite Sputnik-1                 |
+ 1957-10-04 | "Leave It to Beaver" sitcom               |    0
+            | debuts on CBS                             |
+ 1957-10-03 | Lorinc Szabo, Hungarian poet,             |    1
+            | dies aged 57                              |
+ 1957-10-05 | All-Stars beat Montreal in 11th           |    1
+            | NHL All-Star Game                         |
+(5 rows)
+</programlisting>
+  </para>
+
+  <para>
+    Consider an example of fuzzy search on trigrams. Let's create a
+    trigram index on the <structname>events</structname> table, as follows:
+    <programlisting>
+CREATE INDEX events_trgm ON events USING gist(event gist_trgm_ops);
+</programlisting>
+    Now let's find five events that best match the following search query:
+    <programlisting>
+SELECT date, event, ('jeorge ewashington' <-> event ) AS dist 
+FROM events ORDER BY dist ASC LIMIT 3;
+
+    date    |                 event                      |  dist
+------------+--------------------------------------------+---------
+ 1732-02-11 | George Washington                          | 0.458333
+ 1792-12-05 | George Washington is re-elected U.S.       | 0.674419
+            | President                                  |
+ 1945-05-12 | Jayotis Washington is born                 | 0.714286
+(3 rows)
+</programlisting>
+  </para>
+
+  </sect2>
+
+  <sect2>
+    <title>See Also</title>
+    <simplelist>
+    <member><link linkend="indexes-types">Index Types</link></member>
+    <member><link linkend="xindex-ordering-ops">Ordering Operators</link></member>
+    </simplelist>
+  </sect2>
+
  </sect1>
 </chapter>

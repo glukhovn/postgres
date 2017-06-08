@@ -198,7 +198,7 @@
        <literal>~&gt;~</>
       </entry>
       <entry>
-      </entry>      
+      </entry>
      </row>
      <row>
       <entry><literal>inet_ops</></entry>
@@ -230,8 +230,11 @@
   may offer better performance in some applications.
  </para>
  <para>
-  By supporting the ordering &lt;-&gt; operator the quad_point_ops and kd_point_ops provide 
-  a user with the ability to perform a K-nearest-neighbour search over the indexed point dataset.
+  The <literal>quad_point_ops</>, <literal>kd_point_ops</>, 
+  <literal>circle_ops</literal>, and <literal>poly_ops</literal> operator
+  classes support the <literal>&lt;-&gt;</> ordering operator, which enables
+  the k-nearest neighbor (<literal>k-NN</literal>) search over indexed
+  point, circle, or polygon datasets.
  </para>
 
 </sect1>
