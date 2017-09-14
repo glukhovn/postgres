@@ -480,10 +480,11 @@ extern bool btcanreturn(Relation index, int attno);
 /*
  * prototypes for internal functions in nbtree.c
  */
-extern bool _bt_parallel_seize(IndexScanDesc scan, BlockNumber *pageno);
-extern void _bt_parallel_release(IndexScanDesc scan, BlockNumber scan_page);
-extern void _bt_parallel_done(IndexScanDesc scan);
+extern bool _bt_parallel_seize(IndexScanDesc scan, BTScanState state, BlockNumber *pageno);
+extern void _bt_parallel_release(IndexScanDesc scan, BTScanState state, BlockNumber scan_page);
+extern void _bt_parallel_done(IndexScanDesc scan, BTScanState state);
 extern void _bt_parallel_advance_array_keys(IndexScanDesc scan);
+
 
 /*
  * prototypes for functions in nbtinsert.c

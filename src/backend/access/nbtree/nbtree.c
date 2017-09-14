@@ -96,6 +96,7 @@ typedef enum
 typedef struct BTParallelScanDescData
 {
 	BlockNumber btps_scanPage;	/* latest or next page to be scanned */
+	BlockNumber btps_knnScanPage;	/* secondary latest or next page to be scanned */
 	BTPS_State	btps_pageStatus;	/* indicates whether next page is
 									 * available for scan. see above for
 									 * possible states of parallel scan. */
@@ -801,6 +802,7 @@ btinitparallelscan(void *target)
 
 	SpinLockInit(&bt_target->btps_mutex);
 	bt_target->btps_scanPage = InvalidBlockNumber;
+	bt_target->btps_knnScanPage = InvalidBlockNumber;
 	bt_target->btps_pageStatus = BTPARALLEL_NOT_INITIALIZED;
 	bt_target->btps_arrayKeyCount = 0;
 	ConditionVariableInit(&bt_target->btps_cv);
@@ -827,6 +829,7 @@ btparallelrescan(IndexScanDesc scan)
 	 */
 	SpinLockAcquire(&btscan->btps_mutex);
 	btscan->btps_scanPage = InvalidBlockNumber;
+	btscan->btps_knnScanPage = InvalidBlockNumber;
 	btscan->btps_pageStatus = BTPARALLEL_NOT_INITIALIZED;
 	btscan->btps_arrayKeyCount = 0;
 	SpinLockRelease(&btscan->btps_mutex);
@@ -851,7 +854,7 @@ btparallelrescan(IndexScanDesc scan)
  * Callers should ignore the value of pageno if the return value is false.
  */
 bool
-_bt_parallel_seize(IndexScanDesc scan, BlockNumber *pageno)
+_bt_parallel_seize(IndexScanDesc scan, BTScanState state, BlockNumber *pageno)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	BTPS_State	pageStatus;
@@ -859,11 +862,16 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *pageno)
 	bool		status = true;
 	ParallelIndexScanDesc parallel_scan = scan->parallel_scan;
 	BTParallelScanDesc btscan;
+	BlockNumber *scanPage;
 
 	*pageno = P_NONE;
 
 	btscan = (BTParallelScanDesc) OffsetToPointer((void *) parallel_scan,
 												  parallel_scan->ps_offset);
+
+	scanPage = state == &so->state
+		? &btscan->btps_scanPage
+		: &btscan->btps_knnScanPage;
 
 	while (1)
 	{
@@ -890,7 +898,7 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *pageno)
 			 * of advancing it to a new page!
 			 */
 			btscan->btps_pageStatus = BTPARALLEL_ADVANCING;
-			*pageno = btscan->btps_scanPage;
+			*pageno = *scanPage;
 			exit_loop = true;
 		}
 		SpinLockRelease(&btscan->btps_mutex);
@@ -909,19 +917,42 @@ _bt_parallel_seize(IndexScanDesc scan, BlockNumber *pageno)
  *		can now begin advancing the scan.
  */
 void
-_bt_parallel_release(IndexScanDesc scan, BlockNumber scan_page)
+_bt_parallel_release(IndexScanDesc scan, BTScanState state,
+					 BlockNumber scan_page)
 {
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	ParallelIndexScanDesc parallel_scan = scan->parallel_scan;
 	BTParallelScanDesc btscan;
+	BlockNumber *scanPage;
+	BlockNumber *otherScanPage;
+	bool		status_changed = false;
+	bool		knnScan = so->knnState != NULL;
 
 	btscan = (BTParallelScanDesc) OffsetToPointer((void *) parallel_scan,
 												  parallel_scan->ps_offset);
+	if (!state || state == &so->state)
+	{
+		scanPage = &btscan->btps_scanPage;
+		otherScanPage = &btscan->btps_knnScanPage;
+	}
+	else
+	{
+		scanPage = &btscan->btps_knnScanPage;
+		otherScanPage = &btscan->btps_scanPage;
+	}
 
 	SpinLockAcquire(&btscan->btps_mutex);
-	btscan->btps_scanPage = scan_page;
-	btscan->btps_pageStatus = BTPARALLEL_IDLE;
+	*scanPage = scan_page;
+	/* switch to idle state only if both KNN pages are initialized */
+	if (!knnScan || *otherScanPage != InvalidBlockNumber)
+	{
+		btscan->btps_pageStatus = BTPARALLEL_IDLE;
+		status_changed = true;
+	}
 	SpinLockRelease(&btscan->btps_mutex);
-	ConditionVariableSignal(&btscan->btps_cv);
+
+	if (status_changed)
+		ConditionVariableSignal(&btscan->btps_cv);
 }
 
 /*
@@ -932,12 +963,15 @@ _bt_parallel_release(IndexScanDesc scan, BlockNumber scan_page)
  * advance to the next page.
  */
 void
-_bt_parallel_done(IndexScanDesc scan)
+_bt_parallel_done(IndexScanDesc scan, BTScanState state)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
 	ParallelIndexScanDesc parallel_scan = scan->parallel_scan;
 	BTParallelScanDesc btscan;
+	BlockNumber *scanPage;
+	BlockNumber *otherScanPage;
 	bool		status_changed = false;
+	bool		knnScan = so->knnState != NULL;
 
 	/* Do nothing, for non-parallel scans */
 	if (parallel_scan == NULL)
@@ -946,18 +980,41 @@ _bt_parallel_done(IndexScanDesc scan)
 	btscan = (BTParallelScanDesc) OffsetToPointer((void *) parallel_scan,
 												  parallel_scan->ps_offset);
 
+	if (!state || state == &so->state)
+	{
+		scanPage = &btscan->btps_scanPage;
+		otherScanPage = &btscan->btps_knnScanPage;
+	}
+	else
+	{
+		scanPage = &btscan->btps_knnScanPage;
+		otherScanPage = &btscan->btps_scanPage;
+	}
+
 	/*
 	 * Mark the parallel scan as done for this combination of scan keys,
 	 * unless some other process already did so.  See also
 	 * _bt_advance_array_keys.
 	 */
 	SpinLockAcquire(&btscan->btps_mutex);
-	if (so->arrayKeyCount >= btscan->btps_arrayKeyCount &&
-		btscan->btps_pageStatus != BTPARALLEL_DONE)
+
+	Assert(btscan->btps_pageStatus == BTPARALLEL_ADVANCING);
+
+	if (so->arrayKeyCount >= btscan->btps_arrayKeyCount)
 	{
-		btscan->btps_pageStatus = BTPARALLEL_DONE;
+		*scanPage = P_NONE;
 		status_changed = true;
+
+		/* switch to "done" state only if both KNN scans are done */
+		if (!knnScan || *otherScanPage == P_NONE)
+			btscan->btps_pageStatus = BTPARALLEL_DONE;
+		/* else switch to "idle" state only if both KNN scans are initialized */
+		else if (*otherScanPage != InvalidBlockNumber)
+			btscan->btps_pageStatus = BTPARALLEL_IDLE;
+		else
+			status_changed = false;
 	}
+
 	SpinLockRelease(&btscan->btps_mutex);
 
 	/* wake up all the workers associated with this parallel scan */
@@ -987,6 +1044,7 @@ _bt_parallel_advance_array_keys(IndexScanDesc scan)
 	if (btscan->btps_pageStatus == BTPARALLEL_DONE)
 	{
 		btscan->btps_scanPage = InvalidBlockNumber;
+		btscan->btps_knnScanPage = InvalidBlockNumber;
 		btscan->btps_pageStatus = BTPARALLEL_NOT_INITIALIZED;
 		btscan->btps_arrayKeyCount++;
 	}

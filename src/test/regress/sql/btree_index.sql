@@ -157,6 +157,90 @@ ORDER BY random <-> 0;
 
 DROP INDEX bt_i4_heap_random_idx;
 
+-- test parallel KNN scan
+
+-- Serializable isolation would disable parallel query, so explicitly use an
+-- arbitrary other level.
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+
+SET parallel_setup_cost = 0;
+SET parallel_tuple_cost = 0;
+SET min_parallel_table_scan_size = 0;
+SET max_parallel_workers = 4;
+SET max_parallel_workers_per_gather = 4;
+SET cpu_operator_cost = 0;
+
+RESET enable_indexscan;
+
+CREATE TABLE bt_knn_test AS SELECT i * 10 AS i FROM generate_series(1, 1000000) i;
+CREATE INDEX bt_knn_test_idx ON bt_knn_test (i);
+ALTER TABLE bt_knn_test SET (parallel_workers = 4);
+ANALYZE bt_knn_test;
+
+EXPLAIN (COSTS OFF)
+SELECT i FROM bt_knn_test WHERE i > 8000000;
+
+CREATE TABLE bt_knn_test2 AS
+	SELECT row_number() OVER (ORDER BY i * 10 <-> 4000003) AS n, i * 10 AS i
+	FROM generate_series(1, 1000000) i;
+
+EXPLAIN (COSTS OFF)
+WITH bt_knn_test1 AS (
+	SELECT row_number() OVER () AS n, i
+	FROM bt_knn_test
+	ORDER BY i <-> 4000003
+)
+SELECT * FROM bt_knn_test1 t1 JOIN bt_knn_test2 t2 USING (n) WHERE t1.i <> t2.i;
+
+WITH bt_knn_test1 AS (
+	SELECT row_number() OVER () AS n, i
+	FROM bt_knn_test
+	ORDER BY i <-> 4000003
+)
+SELECT * FROM bt_knn_test1 t1 JOIN bt_knn_test2 t2 USING (n) WHERE t1.i <> t2.i;
+
+DROP TABLE bt_knn_test;
+CREATE TABLE bt_knn_test AS SELECT i FROM generate_series(1, 10) i, generate_series(1, 100000) j;
+CREATE INDEX bt_knn_test_idx ON bt_knn_test (i);
+ALTER TABLE bt_knn_test SET (parallel_workers = 4);
+ANALYZE bt_knn_test;
+
+EXPLAIN (COSTS OFF)
+WITH
+t1 AS (
+	SELECT row_number() OVER () AS n, i
+	FROM bt_knn_test
+	WHERE i IN (3, 4, 7, 8, 2)
+	ORDER BY i <-> 4
+),
+t2 AS (
+	SELECT i * 100000 + j AS n, (ARRAY[4, 3, 2, 7, 8])[i + 1] AS i
+	FROM generate_series(0, 4) i, generate_series(1, 100000) j
+)
+SELECT * FROM t1 JOIN t2 USING (n) WHERE t1.i <> t2.i;
+
+WITH
+t1 AS (
+	SELECT row_number() OVER () AS n, i
+	FROM bt_knn_test
+	WHERE i IN (3, 4, 7, 8, 2)
+	ORDER BY i <-> 4
+),
+t2 AS (
+	SELECT i * 100000 + j AS n, (ARRAY[4, 3, 2, 7, 8])[i + 1] AS i
+	FROM generate_series(0, 4) i, generate_series(1, 100000) j
+)
+SELECT * FROM t1 JOIN t2 USING (n) WHERE t1.i <> t2.i;
+
+RESET parallel_setup_cost;
+RESET parallel_tuple_cost;
+RESET min_parallel_table_scan_size;
+RESET max_parallel_workers;
+RESET max_parallel_workers_per_gather;
+RESET cpu_operator_cost;
+
+ROLLBACK;
+
 -- enable bt_i4_index index on bt_i4_heap(seqno)
 UPDATE pg_index SET indisvalid = true WHERE indexrelid = 'bt_i4_index'::regclass;
 
