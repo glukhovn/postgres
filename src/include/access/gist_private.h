@@ -368,13 +368,30 @@ typedef struct GISTBuildBuffers
 } GISTBuildBuffers;
 
 /*
+ * Definition of items of enum type. Names and codes. To add or modify item
+ * edit both lists
+ */
+#define GIST_OPTION_BUFFERING_VALUE_NAMES { \
+	"on",									\
+	"off",									\
+	"auto",									\
+	(const char *) NULL						\
+}
+typedef enum gist_option_buffering_value_numbers
+{
+	GIST_OPTION_BUFFERING_ON = 0,
+	GIST_OPTION_BUFFERING_OFF = 1,
+	GIST_OPTION_BUFFERING_AUTO = 2,
+}	gist_option_buffering_value_numbers;
+
+/*
  * Storage type for GiST's reloptions
  */
 typedef struct GiSTOptions
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int			fillfactor;		/* page fill factor in percent (0..100) */
-	int			bufferingModeOffset;	/* use buffering build? */
+	int			buffering_mode; /* use buffering build? */
 } GiSTOptions;
 
 /* gist.c */
