@@ -710,6 +710,24 @@ add_real_reloption(bits32 kinds, const char *name, const char *desc, double defa
 }
 
 /*
+ * add_enuum_reloption
+ *		Add a new enum reloption
+ */
+void
+add_enum_reloption(bits32 kinds, const char *name, const char *desc,
+					 const char **allowed_values, int default_val)
+{
+	relopt_enum *newoption;
+
+	newoption = (relopt_enum *) allocate_reloption(kinds, RELOPT_TYPE_ENUM,
+												   name, desc);
+	newoption->allowed_values = allowed_values;
+	newoption->default_val = default_val;
+
+	add_reloption((relopt_gen *) newoption);
+}
+
+/*
  * add_string_reloption
  *		Add a new string reloption
  *
@@ -1232,7 +1250,6 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 					 * If value was not found among enum value list, we should
 					 * raise error listing all acceptable values. So we build
 					 * the list, and raise error
-FIXME: add this comment to main patch!!!!
 					 */
 					int			length = 0;
 					char	   *str;
