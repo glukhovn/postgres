@@ -1246,57 +1246,29 @@ parse_one_reloption(relopt_value *option, char *text_str, int text_len,
 				}
 				if (!parsed)
 				{
-					/*
-					 * If value was not found among enum value list, we should
-					 * raise error listing all acceptable values. So we build
-					 * the list, and raise error
-					 */
-					int			length = 0;
-					char	   *str;
-					char	   *ptr;
+					StringInfoData buf;
 
-					/*
-					 * Generating list of allowed values: "value1", "value2",
-					 * ... "valueN"
-					 */
+					initStringInfo(&buf);
 					i = 0;
 					while (opt_enum->allowed_values[i])
 					{
-						length += strlen(opt_enum->allowed_values[i]) + 4;
-						/* +4: two quotes, one comma, one space */
-						i++;
-					}
-
-					/*
-					 * one byte not used for comma after the last item will be
-					 * used for \0; for another byte will do -1
-					 */
-					str = palloc((length - 1) * sizeof(char));
-					i = 0;
-					ptr = str;
-					while (opt_enum->allowed_values[i])
-					{
-						if (i != 0)
+						appendStringInfo(&buf,"\"%s\"",
+										 opt_enum->allowed_values[i]);
+						if (opt_enum->allowed_values[i + 1])
 						{
-							ptr[0] = ',';
-							ptr[1] = ' ';
-							ptr += 2;
+							if (opt_enum->allowed_values[i + 2])
+								appendStringInfo(&buf,", ");
+							else
+								appendStringInfo(&buf," and ");
 						}
-						ptr[0] = '"';
-						ptr++;
-						sprintf(ptr, "%s", opt_enum->allowed_values[i]);
-						ptr += strlen(ptr);
-						ptr[0] = '"';
-						ptr++;
 						i++;
 					}
-					*ptr = '\0';
-
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 							 errmsg("invalid value for \"%s\" option",
 									option->gen->name),
-							 errdetail("Valid values are %s.", str)));
+							 errdetail("Valid values are %s.", /*str*/ buf.data)));
+					pfree(buf.data);
 				}
 			}
 			break;
