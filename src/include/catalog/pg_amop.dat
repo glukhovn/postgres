@@ -1598,6 +1598,10 @@
 { amopfamily => 'spgist/poly_ops', amoplefttype => 'polygon',
   amoprighttype => 'polygon', amopstrategy => '12',
   amopopr => '|&>(polygon,polygon)', amopmethod => 'spgist' },
+{ amopfamily => 'spgist/poly_ops', amoplefttype => 'polygon',
+  amoprighttype => 'point', amopstrategy => '15',
+  amopopr => '<->(polygon,point)', amoppurpose => 'o', amopmethod => 'spgist',
+  amopsortfamily => 'btree/float_ops' },
 
 # GiST inet_ops
 { amopfamily => 'gist/network_ops', amoplefttype => 'inet',
