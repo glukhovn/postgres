@@ -156,7 +156,8 @@ typedef struct SpGistSearchItem
 typedef struct SpGistScanOpaqueData
 {
 	SpGistState state;			/* see above */
-	pairingheap *queue;			/* queue of unvisited items */
+	List	   *scanStack;		/* list of SpGistSearchItem (unordered scans) */
+	pairingheap *scanQueue;		/* queue of unvisited items (ordered scans) */
 	MemoryContext queueCxt;		/* context holding the queue */
 	MemoryContext tempCxt;		/* short-lived memory context */
 	MemoryContext traversalCxt; /* memory context for traversalValues */

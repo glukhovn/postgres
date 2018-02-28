@@ -104,7 +104,10 @@ spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item,
 		memcpy(item->distances, distances,
 			   so->numberOfOrderBys * sizeof(double));
 
-	pairingheap_add(so->queue, &item->phNode);
+	if (so->scanQueue)
+		pairingheap_add(so->scanQueue, &item->phNode);
+	else
+		so->scanStack = lcons(item, so->scanStack);
 }
 
 static void
@@ -350,9 +353,13 @@ spgrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 	/* preprocess scankeys, set up the representation in *so */
 	spgPrepareScanKeys(scan);
 
+	so->scanStack = NIL;
+
 	MemoryContextReset(so->queueCxt);
 	oldCxt = MemoryContextSwitchTo(so->queueCxt);
-	so->queue = pairingheap_allocate(pairingheap_SpGistSearchItem_cmp, scan);
+	/* initialize queue only for distance-ordered scans */
+	so->scanQueue = scan->numberOfOrderBys <= 0 ? NULL :
+		pairingheap_allocate(pairingheap_SpGistSearchItem_cmp, scan);
 	MemoryContextSwitchTo(oldCxt);
 
 	/* set up starting queue entries */
@@ -633,11 +640,21 @@ spgGetNextQueueItem(SpGistScanOpaque so)
 {
 	SpGistSearchItem *item;
 
-	if (!pairingheap_is_empty(so->queue))
-		item = (SpGistSearchItem *) pairingheap_remove_first(so->queue);
+	if (so->scanQueue)
+	{
+		if (pairingheap_is_empty(so->scanQueue))
+			return NULL;	/* Done when both heaps are empty */
+
+		item = (SpGistSearchItem *) pairingheap_remove_first(so->scanQueue);
+	}
 	else
-		/* Done when both heaps are empty */
-		item = NULL;
+	{
+		if (!so->scanStack)
+			return NULL;	/* there are no more items to scan */
+
+		item = (SpGistSearchItem *) linitial(so->scanStack);
+		so->scanStack = list_delete_first(so->scanStack);
+	}
 
 	/* Return item; caller is responsible to pfree it */
 	return item;
