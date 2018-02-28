@@ -100,7 +100,10 @@ static void
 spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item,
 						double *distances)
 {
-	memcpy(item->distances, distances, so->numberOfOrderBys * sizeof(double));
+	if (!item->isnull)
+		memcpy(item->distances, distances,
+			   so->numberOfOrderBys * sizeof(double));
+
 	pairingheap_add(so->queue, &item->phNode);
 }
 
@@ -145,7 +148,8 @@ resetSpGistScanOpaque(SpGistScanOpaque so)
 		int			i;
 
 		for (i = 0; i < so->nPtrs; i++)
-			pfree(so->distances[i]);
+			if (so->distances[i])
+				pfree(so->distances[i]);
 	}
 
 	if (so->want_itup)
@@ -853,9 +857,14 @@ storeGettuple(SpGistScanOpaque so, ItemPointer heapPtr,
 
 	if (so->numberOfOrderBys > 0)
 	{
-		Size		size = sizeof(double) * so->numberOfOrderBys;
+		if (isnull)
+			so->distances[so->nPtrs] = NULL;
+		else
+		{
+			Size		size = sizeof(double) * so->numberOfOrderBys;
 
-		so->distances[so->nPtrs] = memcpy(palloc(size), distances, size);
+			so->distances[so->nPtrs] = memcpy(palloc(size), distances, size);
+		}
 	}
 
 	if (so->want_itup)
@@ -905,7 +914,8 @@ spggettuple(IndexScanDesc scan, ScanDirection dir)
 			int			i;
 
 			for (i = 0; i < so->nPtrs; i++)
-				pfree(so->distances[i]);
+				if (so->distances[i])
+					pfree(so->distances[i]);
 		}
 
 		if (so->want_itup)
