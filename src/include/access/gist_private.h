@@ -17,6 +17,7 @@
 #include "access/amapi.h"
 #include "access/gist.h"
 #include "access/itup.h"
+#include "access/reloptions.h"
 #include "fmgr.h"
 #include "lib/pairingheap.h"
 #include "storage/bufmgr.h"
@@ -368,21 +369,9 @@ typedef struct GISTBuildBuffers
 } GISTBuildBuffers;
 
 /*
- * Definition of items of enum type. Names and codes. To add or modify item
- * edit both lists
+ * Definition of items of GiST enum option 'buffering'.
  */
-#define GIST_OPTION_BUFFERING_VALUE_NAMES { \
-	"on",									\
-	"off",									\
-	"auto",									\
-	(const char *) NULL						\
-}
-typedef enum gist_option_buffering_value_numbers
-{
-	GIST_OPTION_BUFFERING_ON = 0,
-	GIST_OPTION_BUFFERING_OFF = 1,
-	GIST_OPTION_BUFFERING_AUTO = 2,
-}	gist_option_buffering_value_numbers;
+extern relopt_enum_element gist_buffering_option_enum[];
 
 /*
  * Storage type for GiST's reloptions
@@ -391,7 +380,7 @@ typedef struct GiSTOptions
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	int			fillfactor;		/* page fill factor in percent (0..100) */
-	int			buffering_mode; /* use buffering build? */
+	int			bufferingMode;	/* use buffering build? */
 } GiSTOptions;
 
 /* gist.c */

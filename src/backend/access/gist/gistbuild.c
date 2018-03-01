@@ -74,6 +74,16 @@ typedef struct
 	GistBufferingMode bufferingMode;
 } GISTBuildState;
 
+/* Definition of GiST enum option 'buffering' */
+relopt_enum_element
+gist_buffering_option_enum[] =
+{
+	{ "auto",	GIST_BUFFERING_AUTO },		/* default */
+	{ "on",		GIST_BUFFERING_STATS },
+	{ "off",	GIST_BUFFERING_DISABLED },
+	{ NULL,		0 }
+};
+
 /* prototypes for private functions */
 static void gistInitBuffering(GISTBuildState *buildstate);
 static int	calculatePagesPerBuffer(GISTBuildState *buildstate, int levelStep);
@@ -127,13 +137,7 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 		/* Get buffering mode from the options string */
 		GiSTOptions *options = (GiSTOptions *) index->rd_options;
 
-		if (options->buffering_mode == GIST_OPTION_BUFFERING_ON)
-			buildstate.bufferingMode = GIST_BUFFERING_STATS;
-		else if (options->buffering_mode == GIST_OPTION_BUFFERING_OFF)
-			buildstate.bufferingMode = GIST_BUFFERING_DISABLED;
-		else
-			buildstate.bufferingMode = GIST_BUFFERING_AUTO;
-
+		buildstate.bufferingMode = options->bufferingMode;
 		fillfactor = options->fillfactor;
 	}
 	else

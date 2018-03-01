@@ -109,12 +109,20 @@ typedef struct relopt_real
 	double		max;
 } relopt_real;
 
+typedef struct relopt_enum_element
+{
+	const char *name;
+	int			value;
+} relopt_enum_element;
+
+#define RELOPT_ENUM_DEFAULT ((const char *) -1)	/* pseudo-name for default value */
+
 typedef struct relopt_enum
 {
 	relopt_gen	gen;
-	const char **allowed_values;/* Null terminated array of allowed values for
-								 * the option */
-	int			default_val;	/* Number of item of allowed_values array */
+	relopt_enum_element *allowed_values;	/* Null terminated array of allowed
+											 * values for the option. Its first
+											 * element contains default value. */
 } relopt_enum;
 
 /* validation routines for strings */
@@ -263,7 +271,7 @@ extern void add_int_reloption(bits32 kinds, const char *name, const char *desc,
 extern void add_real_reloption(bits32 kinds, const char *name, const char *desc,
 				   double default_val, double min_val, double max_val);
 extern void add_enum_reloption(bits32 kinds, const char *name, const char *desc,
-					 const char **allowed_values, int default_val);
+				   relopt_enum_element *allowed_values);
 extern void add_string_reloption(bits32 kinds, const char *name, const char *desc,
 					 const char *default_val, validate_string_relopt validator);
 

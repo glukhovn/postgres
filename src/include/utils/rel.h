@@ -336,22 +336,13 @@ typedef struct StdRdOptions
 	((relation)->rd_options ? \
 	 ((StdRdOptions *) (relation)->rd_options)->parallel_workers : (defaultpw))
 
-/*
- * Definition of items of enum type. Names and codes. To add or modify item
- * edit both lists
- */
-#define VIEW_OPTION_CHECK_OPTION_VALUE_NAMES {	\
-	"local",									\
-	"cascaded",									\
-	(const char *) NULL							\
-}
-
 typedef enum view_option_check_option_value_numbers
 {
 	VIEW_OPTION_CHECK_OPTION_NOT_SET = -1,
 	VIEW_OPTION_CHECK_OPTION_LOCAL = 0,
 	VIEW_OPTION_CHECK_OPTION_CASCADED = 1,
 }	view_option_check_option_value_numbers;
+
 
 /*
  * ViewOptions
