@@ -29,7 +29,7 @@
 #include "utils/rel.h"
 
 typedef void (*storeRes_func) (SpGistScanOpaque so, ItemPointer heapPtr,
-							   Datum leafValue, bool isnull, bool recheck,
+							   Datum leafValue, bool isNull, bool recheck,
 							   bool recheckDist, double *distances);
 
 /*
@@ -44,12 +44,12 @@ pairingheap_SpGistSearchItem_cmp(const pairingheap_node *a,
 	IndexScanDesc scan = (IndexScanDesc) arg;
 	int			i;
 
-	if (sa->isnull)
+	if (sa->isNull)
 	{
-		if (!sb->isnull)
+		if (!sb->isNull)
 			return -1;
 	}
-	else if (sb->isnull)
+	else if (sb->isNull)
 	{
 		return 1;
 	}
@@ -97,33 +97,47 @@ spgFreeSearchItem(SpGistScanOpaque so, SpGistSearchItem *item)
  * Called in queue context
  */
 static void
-spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item,
-						double *distances)
+spgAddSearchItemToQueue(SpGistScanOpaque so, SpGistSearchItem *item)
 {
-	if (!item->isnull)
-		memcpy(item->distances, distances,
-			   so->numberOfOrderBys * sizeof(double));
-
 	if (so->scanQueue)
 		pairingheap_add(so->scanQueue, &item->phNode);
 	else
 		so->scanStack = lcons(item, so->scanStack);
 }
 
+static SpGistSearchItem *
+spgAllocSearchItem(SpGistScanOpaque so, bool isnull, double *distances)
+{
+	/* allocate distance array only for non-NULL items */
+	SpGistSearchItem *item =
+		palloc(SizeOfSpGistSearchItem(isnull ? 0 : so->numberOfOrderBys));
+
+	item->isNull = isnull;
+
+	if (!isnull && so->numberOfOrderBys > 0)
+		memcpy(item->distances, distances,
+			   so->numberOfOrderBys * sizeof(double));
+
+	return item;
+}
+
 static void
 spgAddStartItem(SpGistScanOpaque so, bool isnull)
 {
-	SpGistSearchItem *startEntry = (SpGistSearchItem *) palloc0(
-								SizeOfSpGistSearchItem(so->numberOfOrderBys));
+	SpGistSearchItem *startEntry =
+		spgAllocSearchItem(so, isnull, so->zeroDistances);
 
-	ItemPointerSet(&startEntry->heap,
+	ItemPointerSet(&startEntry->heapPtr,
 				   isnull ? SPGIST_NULL_BLKNO : SPGIST_ROOT_BLKNO,
 				   FirstOffsetNumber);
 	startEntry->isLeaf = false;
 	startEntry->level = 0;
-	startEntry->isnull = isnull;
+	startEntry->value = (Datum) 0;
+	startEntry->traversalValue = NULL;
+	startEntry->recheckDist = false;
+	startEntry->recheckQual = false;
 
-	spgAddSearchItemToQueue(so, startEntry, so->zeroDistances);
+	spgAddSearchItemToQueue(so, startEntry);
 }
 
 /*
@@ -386,14 +400,14 @@ spgendscan(IndexScanDesc scan)
  * Leaf SpGistSearchItem constructor, called in queue context
  */
 static SpGistSearchItem *
-spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointerData heapPtr,
-			   Datum leafValue, bool recheckQual, bool recheckDist, bool isnull)
+spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointer heapPtr,
+			   Datum leafValue, bool recheckQual, bool recheckDist, bool isnull,
+			   double *distances)
 {
-	SpGistSearchItem *item = (SpGistSearchItem *) palloc(
-								SizeOfSpGistSearchItem(so->numberOfOrderBys));
+	SpGistSearchItem *item = spgAllocSearchItem(so, isnull, distances);
 
 	item->level = level;
-	item->heap = heapPtr;
+	item->heapPtr = *heapPtr;
 	/* copy value to queue cxt out of tmp cxt */
 	item->value = isnull ? (Datum) 0 :
 		datumCopy(leafValue, so->state.attLeafType.attbyval,
@@ -402,7 +416,6 @@ spgNewHeapItem(SpGistScanOpaque so, int level, ItemPointerData heapPtr,
 	item->isLeaf = true;
 	item->recheckQual = recheckQual;
 	item->recheckDist = recheckDist;
-	item->isnull = isnull;
 
 	return item;
 }
@@ -429,8 +442,7 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		/* Should not have arrived on a nulls page unless nulls are wanted */
 		Assert(so->searchNulls);
 		leafValue = (Datum) 0;
-		/* Assume that all distances for null entries are infinities */
-		distances = so->infDistances;
+		distances = NULL;
 		recheckQual = false;
 		recheckDist = false;
 		result = true;
@@ -478,13 +490,14 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			/* the scan is ordered -> add the item to the queue */
 			MemoryContext oldCxt = MemoryContextSwitchTo(so->queueCxt);
 			SpGistSearchItem *heapItem = spgNewHeapItem(so, item->level,
-														leafTuple->heapPtr,
+														&leafTuple->heapPtr,
 														leafValue,
 														recheckQual,
 														recheckDist,
-														isnull);
+														isnull,
+														distances);
 
-			spgAddSearchItemToQueue(so, heapItem, distances);
+			spgAddSearchItemToQueue(so, heapItem);
 
 			MemoryContextSwitchTo(oldCxt);
 		}
@@ -528,11 +541,12 @@ static SpGistSearchItem *
 spgMakeInnerItem(SpGistScanOpaque so,
 				 SpGistSearchItem *parentItem,
 				 SpGistNodeTuple tuple,
-				 spgInnerConsistentOut *out, int i, bool isnull)
+				 spgInnerConsistentOut *out, int i, bool isnull,
+				 double *distances)
 {
-	SpGistSearchItem *item = palloc(SizeOfSpGistSearchItem(so->numberOfOrderBys));
+	SpGistSearchItem *item = spgAllocSearchItem(so, isnull, distances);
 
-	item->heap = tuple->t_tid;
+	item->heapPtr = tuple->t_tid;
 	item->level = out->levelAdds ? parentItem->level + out->levelAdds[i]
 								 : parentItem->level;
 
@@ -554,7 +568,6 @@ spgMakeInnerItem(SpGistScanOpaque so,
 	item->isLeaf = false;
 	item->recheckQual = false;
 	item->recheckDist = false;
-	item->isnull = isnull;
 
 	return item;
 }
@@ -614,6 +627,7 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		{
 			int			nodeN = out.nodeNumbers[i];
 			SpGistSearchItem *innerItem;
+			double	   *distances;
 
 			Assert(nodeN >= 0 && nodeN < nNodes);
 
@@ -622,12 +636,16 @@ spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			if (!ItemPointerIsValid(&node->t_tid))
 				continue;
 
-			innerItem = spgMakeInnerItem(so, item, node, &out, i, isnull);
+			/*
+			 * Use infinity distances if innerConsistent() failed to return
+			 * them or if is a NULL item (their distances are really unused).
+			 */
+			distances = out.distances ? out.distances[i] : so->infDistances;
 
-			/* Will copy out the distances in spgAddSearchItemToQueue anyway */
-			spgAddSearchItemToQueue(so, innerItem,
-									out.distances ? out.distances[i]
-												  : so->infDistances);
+			innerItem = spgMakeInnerItem(so, item, node, &out, i, isnull,
+										 distances);
+
+			spgAddSearchItemToQueue(so, innerItem);
 		}
 	}
 
@@ -685,17 +703,17 @@ spgTestLeafTuple(SpGistScanOpaque so,
 			if (leafTuple->tupstate == SPGIST_REDIRECT)
 			{
 				/* redirection tuple should be first in chain */
-				Assert(offset == ItemPointerGetOffsetNumber(&item->heap));
+				Assert(offset == ItemPointerGetOffsetNumber(&item->heapPtr));
 				/* transfer attention to redirect point */
-				item->heap = ((SpGistDeadTuple) leafTuple)->pointer;
-				Assert(ItemPointerGetBlockNumber(&item->heap) != SPGIST_METAPAGE_BLKNO);
+				item->heapPtr = ((SpGistDeadTuple) leafTuple)->pointer;
+				Assert(ItemPointerGetBlockNumber(&item->heapPtr) != SPGIST_METAPAGE_BLKNO);
 				return SpGistRedirectOffsetNumber;
 			}
 
 			if (leafTuple->tupstate == SPGIST_DEAD)
 			{
 				/* dead tuple should be first in chain */
-				Assert(offset == ItemPointerGetOffsetNumber(&item->heap));
+				Assert(offset == ItemPointerGetOffsetNumber(&item->heapPtr));
 				/* No live entries on this page */
 				Assert(leafTuple->nextOffset == InvalidOffsetNumber);
 				return SpGistBreakOffsetNumber;
@@ -743,14 +761,14 @@ redirect:
 		{
 			/* We store heap items in the queue only in case of ordered search */
 			Assert(so->numberOfOrderBys > 0);
-			storeRes(so, &item->heap, item->value, item->isnull,
+			storeRes(so, &item->heapPtr, item->value, item->isNull,
 					 item->recheckQual, item->recheckDist, item->distances);
 			reportedSome = true;
 		}
 		else
 		{
-			BlockNumber		blkno  = ItemPointerGetBlockNumber(&item->heap);
-			OffsetNumber	offset = ItemPointerGetOffsetNumber(&item->heap);
+			BlockNumber		blkno  = ItemPointerGetBlockNumber(&item->heapPtr);
+			OffsetNumber	offset = ItemPointerGetOffsetNumber(&item->heapPtr);
 			Page			page;
 			bool			isnull;
 
@@ -810,8 +828,8 @@ redirect:
 					if (innerTuple->tupstate == SPGIST_REDIRECT)
 					{
 						/* transfer attention to redirect point */
-						item->heap = ((SpGistDeadTuple) innerTuple)->pointer;
-						Assert(ItemPointerGetBlockNumber(&item->heap) !=
+						item->heapPtr = ((SpGistDeadTuple) innerTuple)->pointer;
+						Assert(ItemPointerGetBlockNumber(&item->heapPtr) !=
 							   SPGIST_METAPAGE_BLKNO);
 						goto redirect;
 					}

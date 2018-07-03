@@ -137,11 +137,11 @@ typedef struct SpGistSearchItem
 								 * leafValue if heaptuple */
 	void	   *traversalValue; /* opclass-specific traverse value */
 	int			level;			/* level of items on this page */
-	ItemPointerData heap;		/* heap info, if heap tuple */
+	ItemPointerData heapPtr;	/* heap info, if heap tuple */
+	bool		isNull;			/* SearchItem is NULL item */
 	bool		isLeaf;			/* SearchItem is heap item */
 	bool		recheckQual;	/* qual recheck is needed */
 	bool		recheckDist;	/* distance recheck is needed */
-	bool		isnull;
 
 	/* array with numberOfOrderBys entries */
 	double		distances[FLEXIBLE_ARRAY_MEMBER];
