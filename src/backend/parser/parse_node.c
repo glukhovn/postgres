@@ -331,17 +331,6 @@ transformContainerSubscripts(ParseState *pstate,
 			lowerIndexpr = lappend(lowerIndexpr, subexpr);
 			indexprSlice = lappend(indexprSlice, ai);
 		}
-		else
-			Assert(ai->lidx == NULL && !ai->is_slice);
-
-		if (ai->uidx)
-			subexpr = transformExpr(pstate, ai->uidx, pstate->p_expr_kind);
-		else
-		{
-			/* Slice with omitted upper bound, put NULL into the list */
-			Assert(isSlice && ai->is_slice);
-			subexpr = NULL;
-		}
 		subexpr = transformExpr(pstate, ai->uidx, pstate->p_expr_kind);
 		upperIndexpr = lappend(upperIndexpr, subexpr);
 	}

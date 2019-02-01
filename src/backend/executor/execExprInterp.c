@@ -3067,7 +3067,7 @@ ExecEvalSubscriptingRef(ExprState *state, ExprEvalStep *op)
 		if (sbsrefstate->isassignment)
 			ereport(ERROR,
 					(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
-					 errmsg("array subscript in assignment must not be null")));
+					 errmsg("subscript in assignment must not be null")));
 		*op->resnull = true;
 		return false;
 	}
@@ -3139,8 +3139,19 @@ ExecEvalSubscriptingRefOld(ExprState *state, ExprEvalStep *op)
 void
 ExecEvalSubscriptingRefAssign(ExprState *state, ExprEvalStep *op)
 {
-	SubscriptingRefState *sbsrefstate = op->d.sbsref_subscript.state;
+	SubscriptingRefState *sbsrefstate = op->d.sbsref.state;
 	SubscriptRoutines	 *sbsroutines = sbsrefstate->sbsroutines;
+
+	/*
+	 * For an assignment to a fixed-length container type, both the original
+	 * container and the value to be assigned into it must be non-NULL, else we
+	 * punt and return the original container.
+	 */
+	if (sbsrefstate->refattrlength > 0)
+	{
+		if (*op->resnull || sbsrefstate->replacenull)
+			return;
+	}
 
 	sbsrefstate->resnull = *op->resnull;
 	*op->resvalue = sbsroutines->assign(*op->resvalue, sbsrefstate);
