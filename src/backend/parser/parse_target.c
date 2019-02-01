@@ -690,7 +690,7 @@ transformAssignmentIndirection(ParseState *pstate,
 							   Node *rhs,
 							   int location)
 {
-	Node	   *result = NULL;
+	Node	   *result;
 	List	   *subscripts = NIL;
 	bool		isSlice = false;
 	ListCell   *i;
@@ -878,6 +878,8 @@ transformAssignmentIndirection(ParseState *pstate,
 					 errhint("You will need to rewrite or cast the expression."),
 					 parser_errposition(pstate, location)));
 	}
+	else
+		result = rhs;
 
 	return result;
 }

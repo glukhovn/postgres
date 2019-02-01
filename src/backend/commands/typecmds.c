@@ -690,7 +690,7 @@ DefineType(ParseState *pstate, List *names, List *parameters)
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
 			   collation,		/* type's collation */
-			   0);
+			   F_ARRAY_SUBSCRIPT_HANDLER);
 
 	pfree(array_type);
 
@@ -1131,7 +1131,7 @@ DefineDomain(CreateDomainStmt *stmt)
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
 			   domaincoll,		/* type's collation */
-			   0); /* array subscripting implementation */
+			   F_ARRAY_SUBSCRIPT_HANDLER); /* array subscripting implementation */
 
 	pfree(domainArrayName);
 
@@ -1288,7 +1288,7 @@ DefineEnum(CreateEnumStmt *stmt)
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
 			   InvalidOid,		/* type's collation */
-			   0);	/* array subscripting implementation */
+			   F_ARRAY_SUBSCRIPT_HANDLER);	/* array subscripting implementation */
 
 	pfree(enumArrayName);
 
@@ -1620,7 +1620,7 @@ DefineRange(CreateRangeStmt *stmt)
 			   0,				/* Array dimensions of typbasetype */
 			   false,			/* Type NOT NULL */
 			   InvalidOid,		/* typcollation */
-			   0);	/* array subscripting implementation */
+			   F_ARRAY_SUBSCRIPT_HANDLER);	/* array subscripting implementation */
 
 	pfree(rangeArrayName);
 

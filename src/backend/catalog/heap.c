@@ -1309,7 +1309,7 @@ heap_create_with_catalog(const char *relname,
 				   0,			/* array dimensions for typBaseType */
 				   false,		/* Type NOT NULL */
 				   InvalidOid,  /* rowtypes never have a collation */
-				   0);	/* array implementation */
+				   F_ARRAY_SUBSCRIPT_HANDLER);	/* array implementation */
 
 		pfree(relarrayname);
 	}
