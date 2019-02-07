@@ -65,10 +65,12 @@
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "catalog/index.h"
+#include "catalog/pg_am.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"		/* pgrminclude ignore */
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/sortsupport.h"
 #include "utils/tuplesort.h"
@@ -100,6 +102,8 @@ typedef struct BTShared
 	 */
 	Oid			heaprelid;
 	Oid			indexrelid;
+	uint16		orderProc;
+	uint16		sortSuppProc;
 	bool		isunique;
 	bool		isconcurrent;
 	int			scantuplesortstates;
@@ -190,10 +194,16 @@ typedef struct BTLeader
  */
 typedef struct BTBuildState
 {
+	const char *parallelFuncLib;
+	const char *parallelFuncName;
 	bool		isunique;
 	bool		havedead;
 	Relation	heap;
-	Oid		   *opfamilies;
+	uint16		orderProc;
+	uint16		sortSuppProc;
+	MemoryContext compressmcxt;
+	Datum	  (*compress)(Relation indexRel, Datum val, int attno, void **cxt);
+	void	   *compresscxt;
 	BTSpool    *spool;
 
 	/*
@@ -206,7 +216,7 @@ typedef struct BTBuildState
 	/*
 	 * btleader is only present when a parallel index build is performed, and
 	 * only in the leader process. (Actually, only the leader has a
-	 * BTBuildState.  Workers have their own spool and spool2, though.)
+	 * BTBuildState.  Wornkers have their own spool and spool2, though.)
 	 */
 	BTLeader   *btleader;
 } BTBuildState;
@@ -234,19 +244,6 @@ typedef struct BTPageState
 	Size		btps_full;		/* "full" if less than this much free space */
 	struct BTPageState *btps_next;	/* link to parent level, if any */
 } BTPageState;
-
-/*
- * Overall status record for index writing phase.
- */
-typedef struct BTWriteState
-{
-	Relation	heap;
-	Relation	index;
-	bool		btws_use_wal;	/* dump pages to WAL? */
-	BlockNumber btws_pages_alloced; /* # pages allocated */
-	BlockNumber btws_pages_written; /* # pages written out */
-	Page		btws_zeropage;	/* workspace for filling zeroes */
-} BTWriteState;
 
 
 static double _bt_spools_heapscan(Relation heap, Relation index,
@@ -276,14 +273,18 @@ static double _bt_parallel_heapscan(BTBuildState *buildstate,
 static void _bt_leader_participate_as_worker(BTBuildState *buildstate);
 static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 						   BTShared *btshared, Sharedsort *sharedsort,
-						   Sharedsort *sharedsort2, int sortmem);
+						   Sharedsort *sharedsort2, int sortmem,
+						   void *compressFunc);
 
 
 IndexBuildResult *
 btbuild_internal(Relation heap, Relation index, IndexInfo *indexInfo,
-				 Oid *sortOpfamilies,
+				 uint16 orderProc, uint16 sortSuppProc,
+				 Datum (*compress)(Relation indexRel, Datum val, int attno, void **cxt),
+				 void *compressCxt,
 				 void (*build)(void *cxt, BTSpool *, BTSpool *),
-				 void *cxt)
+				 void *buildCxt,
+				 const char *parallelFuncLib, const char *parallelFuncName)
 {
 	IndexBuildResult *result;
 	BTBuildState buildstate;
@@ -301,13 +302,19 @@ btbuild_internal(Relation heap, Relation index, IndexInfo *indexInfo,
 	buildstate.spool2 = NULL;
 	buildstate.indtuples = 0;
 	buildstate.btleader = NULL;
-	buildstate.opfamilies = sortOpfamilies;
+	buildstate.parallelFuncLib = parallelFuncLib;
+	buildstate.parallelFuncName = parallelFuncName;
+	buildstate.orderProc = orderProc;
+	buildstate.sortSuppProc = sortSuppProc;
+	buildstate.compress = compress;
+	buildstate.compresscxt = compressCxt;
+	buildstate.compressmcxt = NULL;
 
 	/*
 	 * We expect to be called exactly once for any index relation. If that's
 	 * not the case, big trouble's what we have.
 	 */
-	if (RelationGetNumberOfBlocks(index) != 0 && !sortOpfamilies)
+	if (RelationGetNumberOfBlocks(index) != 0)
 		elog(ERROR, "index \"%s\" already contains data",
 			 RelationGetRelationName(index));
 
@@ -318,7 +325,7 @@ btbuild_internal(Relation heap, Relation index, IndexInfo *indexInfo,
 	 * inserting the sorted tuples into btree pages and (3) building the upper
 	 * levels.  Finally, it may also be necessary to end use of parallelism.
 	 */
-	build(cxt, buildstate.spool, buildstate.spool2);
+	build(buildCxt, buildstate.spool, buildstate.spool2);
 	_bt_spooldestroy(buildstate.spool);
 	if (buildstate.spool2)
 		_bt_spooldestroy(buildstate.spool2);
@@ -348,7 +355,9 @@ IndexBuildResult *
 btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 {
 	return btbuild_internal(heap, index, indexInfo,
-							NULL, _bt_leafbuild, NULL);
+							BTORDER_PROC, BTSORTSUPPORT_PROC,
+							NULL, NULL, _bt_leafbuild, NULL,
+							"postgres", "_bt_parallel_build_main");
 }
 
 /*
@@ -384,7 +393,7 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 	buildstate->spool = btspool;
 
 	/* Attempt to launch parallel worker scan when required */
-	if (indexInfo->ii_ParallelWorkers > 0)
+	if (indexInfo->ii_ParallelWorkers > 0 && buildstate->parallelFuncName)
 		_bt_begin_parallel(buildstate, indexInfo->ii_Concurrent,
 						   indexInfo->ii_ParallelWorkers);
 
@@ -424,7 +433,8 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 	 */
 	buildstate->spool->sortstate =
 		tuplesort_begin_index_btree(heap, index, buildstate->isunique,
-									buildstate->opfamilies,
+									buildstate->orderProc,
+									buildstate->sortSuppProc,
 									maintenance_work_mem, coordinate,
 									false);
 
@@ -465,7 +475,8 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 		 */
 		buildstate->spool2->sortstate =
 			tuplesort_begin_index_btree(heap, index, false,
-										buildstate->opfamilies,
+										buildstate->orderProc,
+										buildstate->sortSuppProc,
 										work_mem, coordinate2, false);
 	}
 
@@ -559,6 +570,38 @@ _bt_build_callback(Relation index,
 				   void *state)
 {
 	BTBuildState *buildstate = (BTBuildState *) state;
+	Datum		cvalues[INDEX_MAX_KEYS];
+	//IndexTuple	tuple = buildstate->formTuple(index, values, isnull);
+	/* Create the memory context that will hold the GISTSTATE */
+
+	if (buildstate->compress)
+	{
+		MemoryContext oldcxt;
+		int			indnatts = IndexRelationGetNumberOfAttributes(index);
+		int			indnkeyatts = IndexRelationGetNumberOfKeyAttributes(index);
+		int			i;
+
+		if (!buildstate->compressmcxt)
+			buildstate->compressmcxt =
+				AllocSetContextCreate(CurrentMemoryContext,
+									  "Index build compress context",
+									  ALLOCSET_DEFAULT_SIZES);
+
+		oldcxt = MemoryContextSwitchTo(buildstate->compressmcxt);
+
+		for (i = 0; i < indnatts; i++)
+		{
+			if (i < indnkeyatts && !isnull[i])
+				cvalues[i] = buildstate->compress(index, values[i], i,
+												  &buildstate->compresscxt);
+			else
+				cvalues[i] = values[i];
+		}
+
+		values = cvalues;
+
+		MemoryContextSwitchTo(oldcxt);
+	}
 
 	/*
 	 * insert the index tuple into the appropriate spool file for subsequent
@@ -574,6 +617,9 @@ _bt_build_callback(Relation index,
 	}
 
 	buildstate->indtuples += 1;
+
+	if (buildstate->compressmcxt)
+		MemoryContextReset(buildstate->compressmcxt);
 }
 
 /*
@@ -607,7 +653,7 @@ _bt_blnewpage(uint32 level)
  * emit a completed btree page, and release the working storage.
  */
 void
-_bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
+bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 {
 	/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
 	RelationOpenSmgr(wstate->index);
@@ -958,7 +1004,7 @@ _bt_buildadd(BTWriteState *wstate, BTPageState *state, IndexTuple itup)
 		 * Write out the old page.  We never need to touch it again, so we can
 		 * free the opage workspace too.
 		 */
-		_bt_blwritepage(wstate, opage, oblkno);
+		bt_blwritepage(wstate, opage, oblkno);
 
 		/*
 		 * Reset last_off to point to new page
@@ -1047,7 +1093,7 @@ _bt_uppershutdown(BTWriteState *wstate, BTPageState *state)
 		 * back one slot.  Then we can dump out the page.
 		 */
 		_bt_slideleft(s->btps_page);
-		_bt_blwritepage(wstate, s->btps_page, s->btps_blkno);
+		bt_blwritepage(wstate, s->btps_page, s->btps_blkno);
 		s->btps_page = NULL;	/* writepage freed the workspace */
 	}
 
@@ -1059,7 +1105,7 @@ _bt_uppershutdown(BTWriteState *wstate, BTPageState *state)
 	 */
 	metapage = (Page) palloc(BLCKSZ);
 	_bt_initmetapage(metapage, rootblkno, rootlevel);
-	_bt_blwritepage(wstate, metapage, BTREE_METAPAGE);
+	bt_blwritepage(wstate, metapage, BTREE_METAPAGE);
 }
 
 /*
@@ -1090,7 +1136,7 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 		/* the preparation of merge */
 		itup = tuplesort_getindextuple(btspool->sortstate, true);
 		itup2 = tuplesort_getindextuple(btspool2->sortstate, true);
-		indexScanKey = _bt_mkscankey_nodata(wstate->index, NULL);
+		indexScanKey = _bt_mkscankey_nodata(wstate->index, 0);
 
 		/* Prepare SortSupport data for each column */
 		sortKeys = (SortSupport) palloc0(keysz * sizeof(SortSupportData));
@@ -1114,7 +1160,9 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 			strategy = (scanKey->sk_flags & SK_BT_DESC) != 0 ?
 				BTGreaterStrategyNumber : BTLessStrategyNumber;
 
-			PrepareSortSupportFromIndexRel(wstate->index, InvalidOid, strategy, sortKey);
+			PrepareSortSupportFromIndexRel(wstate->index,
+										   BTORDER_PROC, BTSORTSUPPORT_PROC,
+										   strategy, sortKey);
 		}
 
 		_bt_freeskey(indexScanKey);
@@ -1256,7 +1304,8 @@ _bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent, int request)
 	 */
 	EnterParallelMode();
 	Assert(request > 0);
-	pcxt = CreateParallelContext("postgres", "_bt_parallel_build_main",
+	pcxt = CreateParallelContext(buildstate->parallelFuncLib,
+								 buildstate->parallelFuncName,
 								 request, true);
 	scantuplesortstates = leaderparticipates ? request + 1 : request;
 
@@ -1306,6 +1355,8 @@ _bt_begin_parallel(BTBuildState *buildstate, bool isconcurrent, int request)
 	/* Initialize immutable state */
 	btshared->heaprelid = RelationGetRelid(btspool->heap);
 	btshared->indexrelid = RelationGetRelid(btspool->index);
+	btshared->orderProc = buildstate->orderProc;
+	btshared->sortSuppProc = buildstate->sortSuppProc;
 	btshared->isunique = btspool->isunique;
 	btshared->isconcurrent = isconcurrent;
 	btshared->scantuplesortstates = scantuplesortstates;
@@ -1494,7 +1545,7 @@ _bt_leader_participate_as_worker(BTBuildState *buildstate)
 	/* Perform work common to all participants */
 	_bt_parallel_scan_and_sort(leaderworker, leaderworker2, btleader->btshared,
 							   btleader->sharedsort, btleader->sharedsort2,
-							   sortmem);
+							   sortmem, buildstate->compress);
 
 #ifdef BTREE_BUILD_STATS
 	if (log_btree_build_stats)
@@ -1509,7 +1560,7 @@ _bt_leader_participate_as_worker(BTBuildState *buildstate)
  * Perform work within a launched parallel process.
  */
 void
-_bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
+index_parallel_build_main(dsm_segment *seg, shm_toc *toc, void *compressFunc)
 {
 	char	   *sharedquery;
 	BTSpool    *btspool;
@@ -1585,7 +1636,7 @@ _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
 	/* Perform sorting of spool, and possibly a spool2 */
 	sortmem = maintenance_work_mem / btshared->scantuplesortstates;
 	_bt_parallel_scan_and_sort(btspool, btspool2, btshared, sharedsort,
-							   sharedsort2, sortmem);
+							   sharedsort2, sortmem, compressFunc);
 
 #ifdef BTREE_BUILD_STATS
 	if (log_btree_build_stats)
@@ -1597,6 +1648,12 @@ _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
 
 	index_close(indexRel, indexLockmode);
 	table_close(heapRel, heapLockmode);
+}
+
+void
+_bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
+{
+	index_parallel_build_main(seg, toc, NULL);
 }
 
 /*
@@ -1614,7 +1671,8 @@ _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc)
 static void
 _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 						   BTShared *btshared, Sharedsort *sharedsort,
-						   Sharedsort *sharedsort2, int sortmem)
+						   Sharedsort *sharedsort2, int sortmem,
+						   void *compressFunc)
 {
 	SortCoordinate coordinate;
 	BTBuildState buildstate;
@@ -1632,7 +1690,8 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 	btspool->sortstate = tuplesort_begin_index_btree(btspool->heap,
 													 btspool->index,
 													 btspool->isunique,
-													 NULL,
+													 btshared->orderProc,
+													 btshared->sortSuppProc,
 													 sortmem, coordinate,
 													 false);
 
@@ -1656,7 +1715,8 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 		coordinate2->sharedsort = sharedsort2;
 		btspool2->sortstate =
 			tuplesort_begin_index_btree(btspool->heap, btspool->index, false,
-										NULL,
+										btshared->orderProc,
+										btshared->sortSuppProc,
 										Min(sortmem, work_mem), coordinate2,
 										false);
 	}
@@ -1669,6 +1729,11 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 	buildstate.spool2 = btspool2;
 	buildstate.indtuples = 0;
 	buildstate.btleader = NULL;
+	buildstate.orderProc = btshared->orderProc;
+	buildstate.sortSuppProc = btshared->sortSuppProc;
+	buildstate.compress = compressFunc;
+	buildstate.compresscxt = NULL;
+	buildstate.compressmcxt = NULL;
 
 	/* Join parallel scan */
 	indexInfo = BuildIndexInfo(btspool->index);

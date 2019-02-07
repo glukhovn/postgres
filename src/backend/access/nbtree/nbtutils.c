@@ -123,7 +123,7 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
  *		their own comparison routines.
  */
 ScanKey
-_bt_mkscankey_nodata(Relation rel, Oid *opfamilies)
+_bt_mkscankey_nodata(Relation rel, uint16 orderProc)
 {
 	ScanKey		skey;
 	int			indnkeyatts;
@@ -137,38 +137,39 @@ _bt_mkscankey_nodata(Relation rel, Oid *opfamilies)
 
 	for (i = 0; i < indnkeyatts; i++)
 	{
-		FmgrInfo   *procinfo;
-		int			flags;
 
-		/*
-		 * We can use the cached (default) support procs since no cross-type
-		 * comparison can be needed.
-		 */
-		if (opfamilies)
+		int			flags = SK_ISNULL | (indoption[i] << SK_BT_INDOPTION_SHIFT);
+
+		if (orderProc)
 		{
-			Oid			atttype = rel->rd_att->attrs[i].atttypid;
-			Oid			procno = get_opfamily_proc(opfamilies[i], atttype, atttype, BTORDER_PROC);
+			FmgrInfo   *procinfo;
 
-			if (!OidIsValid(procno))
-				elog(ERROR, "invalid btree opfamily: %d", opfamilies[i]);
+			/*
+			 * We can use the cached (default) support procs since no cross-type
+			 * comparison can be needed.
+			 */
+			procinfo = index_getprocinfo(rel, i + 1, orderProc);
 
-			procinfo = palloc(sizeof(*procinfo));
-			fmgr_info(procno, procinfo);
+			ScanKeyEntryInitializeWithInfo(&skey[i],
+										   flags,
+										   (AttrNumber) (i + 1),
+										   InvalidStrategy,
+										   InvalidOid,
+										   rel->rd_indcollation[i],
+										   procinfo,
+										   (Datum) 0);
 		}
 		else
 		{
-			procinfo = index_getprocinfo(rel, i + 1, BTORDER_PROC);
+			ScanKeyEntryInitialize(&skey[i],
+								   flags | SK_SEARCHNOTNULL,
+								   (AttrNumber) (i + 1),
+								   InvalidStrategy,
+								   InvalidOid,
+								   rel->rd_indcollation[i],
+								   InvalidOid,
+								   (Datum) 0);
 		}
-
-		flags = SK_ISNULL | (indoption[i] << SK_BT_INDOPTION_SHIFT);
-		ScanKeyEntryInitializeWithInfo(&skey[i],
-									   flags,
-									   (AttrNumber) (i + 1),
-									   InvalidStrategy,
-									   InvalidOid,
-									   rel->rd_indcollation[i],
-									   procinfo,
-									   (Datum) 0);
 	}
 
 	return skey;

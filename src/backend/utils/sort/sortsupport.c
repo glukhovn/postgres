@@ -91,13 +91,15 @@ PrepareSortSupportComparisonShim(Oid cmpFunc, SortSupport ssup)
  * state, prepare a suitable shim.
  */
 static void
-FinishSortSupportFunction(Oid opfamily, Oid opcintype, SortSupport ssup)
+FinishSortSupportFunction(Oid opfamily, Oid opcintype,
+						  uint16 orderProc, uint16 sortSuppProc,
+						  SortSupport ssup)
 {
 	Oid			sortSupportFunction;
 
 	/* Look for a sort support function */
 	sortSupportFunction = get_opfamily_proc(opfamily, opcintype, opcintype,
-											BTSORTSUPPORT_PROC);
+											sortSuppProc);
 	if (OidIsValid(sortSupportFunction))
 	{
 		/*
@@ -112,7 +114,7 @@ FinishSortSupportFunction(Oid opfamily, Oid opcintype, SortSupport ssup)
 		Oid			sortFunction;
 
 		sortFunction = get_opfamily_proc(opfamily, opcintype, opcintype,
-										 BTORDER_PROC);
+										 orderProc);
 
 		if (!OidIsValid(sortFunction))
 			elog(ERROR, "missing support function %d(%u,%u) in opfamily %u",
@@ -146,7 +148,8 @@ PrepareSortSupportFromOrderingOp(Oid orderingOp, SortSupport ssup)
 			 orderingOp);
 	ssup->ssup_reverse = (strategy == BTGreaterStrategyNumber);
 
-	FinishSortSupportFunction(opfamily, opcintype, ssup);
+	FinishSortSupportFunction(opfamily, opcintype,
+							  BTORDER_PROC, BTSORTSUPPORT_PROC, ssup);
 }
 
 /*
@@ -158,30 +161,26 @@ PrepareSortSupportFromOrderingOp(Oid orderingOp, SortSupport ssup)
  * comparator function pointer.
  */
 void
-PrepareSortSupportFromIndexRel(Relation indexRel, Oid opfamily,
+PrepareSortSupportFromIndexRel(Relation indexRel,
+							   uint16 orderProc, uint16 sortSuppProc,
 							   int16 strategy, SortSupport ssup)
 {
 	Oid			opcintype;
+	Oid			opfamily;
 
 	Assert(ssup->comparator == NULL);
 
-	if (OidIsValid(opfamily))
+	opfamily = indexRel->rd_opfamily[ssup->ssup_attno - 1];
+
+	if (indexRel->rd_rel->relam == BTREE_AM_OID)
 	{
-		opcintype = indexRel->rd_att->attrs[ssup->ssup_attno - 1].atttypid;
-		/*
-		opcintype = indexRel->rd_opckeytype[ssup->ssup_attno - 1];
-		if (!OidIsValid(opcintype))
-			opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
-		*/
+		opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
 	}
 	else
 	{
-		if (indexRel->rd_rel->relam != BTREE_AM_OID)
-			elog(ERROR, "unexpected non-btree AM: %u",
-				 indexRel->rd_rel->relam);
-
-		opfamily = indexRel->rd_opfamily[ssup->ssup_attno - 1];
-		opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
+		//elog(ERROR, "unexpected non-btree AM: %u", indexRel->rd_rel->relam);
+		/* use opckeytype for GiST */
+		opcintype = indexRel->rd_att->attrs[ssup->ssup_attno - 1].atttypid;
 	}
 
 	if (strategy != BTGreaterStrategyNumber &&
@@ -189,5 +188,6 @@ PrepareSortSupportFromIndexRel(Relation indexRel, Oid opfamily,
 		elog(ERROR, "unexpected sort support strategy: %d", strategy);
 	ssup->ssup_reverse = (strategy == BTGreaterStrategyNumber);
 
-	FinishSortSupportFunction(opfamily, opcintype, ssup);
+	FinishSortSupportFunction(opfamily, opcintype,
+							  orderProc, sortSuppProc, ssup);
 }

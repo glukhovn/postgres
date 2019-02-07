@@ -34,7 +34,9 @@
 #define GIST_EQUAL_PROC					7
 #define GIST_DISTANCE_PROC				8
 #define GIST_FETCH_PROC					9
-#define GISTNProcs					9
+#define GIST_ORDER_PROC					10
+#define GIST_SORTSUPP_PROC				11
+#define GISTNProcs					11
 
 /*
  * Page opaque data in a GiST index page.

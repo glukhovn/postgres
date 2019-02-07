@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "access/nbtree.h"
+#include "access/gist_private.h"
 #include "access/parallel.h"
 #include "access/session.h"
 #include "access/xact.h"
@@ -138,6 +139,9 @@ static const struct
 	},
 	{
 		"_bt_parallel_build_main", _bt_parallel_build_main
+	},
+	{
+		"gist_parallel_build_main", gist_parallel_build_main
 	}
 };
 

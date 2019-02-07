@@ -578,7 +578,7 @@ extern Buffer _bt_get_endpoint(Relation rel, uint32 level, bool rightmost,
  * prototypes for functions in nbtutils.c
  */
 extern ScanKey _bt_mkscankey(Relation rel, IndexTuple itup);
-extern ScanKey _bt_mkscankey_nodata(Relation rel, Oid *opfamilies);
+extern ScanKey _bt_mkscankey_nodata(Relation rel, uint16 orderProc);
 extern void _bt_freeskey(ScanKey skey);
 extern void _bt_freestack(BTStack stack);
 extern void _bt_preprocess_array_keys(IndexScanDesc scan);
@@ -615,6 +615,7 @@ extern bool btvalidate(Oid opclassoid);
 extern IndexBuildResult *btbuild(Relation heap, Relation index,
 		struct IndexInfo *indexInfo);
 extern void _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc);
+extern void index_parallel_build_main(dsm_segment *seg, shm_toc *toc, void *compressFunc);
 
 /*
  * Status record for spooling/sorting phase.  (Note we may have two of
@@ -629,10 +630,29 @@ typedef struct BTSpool
 	bool		isunique;
 } BTSpool;
 
+/*
+ * Overall status record for index writing phase.
+ */
+typedef struct BTWriteState
+{
+	Relation	heap;
+	Relation	index;
+	bool		btws_use_wal;	/* dump pages to WAL? */
+	BlockNumber btws_pages_alloced; /* # pages allocated */
+	BlockNumber btws_pages_written; /* # pages written out */
+	Page		btws_zeropage;	/* workspace for filling zeroes */
+} BTWriteState;
+
 extern IndexBuildResult *
 btbuild_internal(Relation heap, Relation index, struct IndexInfo *indexInfo,
-				 Oid *sortOpfamilies,
+				 uint16 orderProc, uint16 sortSuppProc,
+				 Datum (*compress)(Relation indexRel, Datum val, int attno, void **cxt),
+				 void *compressCxt,
 				 void (*buildCallback)(void *cxt, BTSpool *, BTSpool *),
-				 void *cxt);
+				 void *buildCxt,
+				 const char *parallelFuncLib, const char *parallelFuncName);
+
+void
+bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno);
 
 #endif							/* NBTREE_H */

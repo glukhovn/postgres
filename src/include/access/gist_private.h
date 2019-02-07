@@ -21,6 +21,7 @@
 #include "lib/pairingheap.h"
 #include "storage/bufmgr.h"
 #include "storage/buffile.h"
+#include "storage/shm_toc.h"
 #include "utils/hsearch.h"
 #include "access/genam.h"
 
@@ -511,6 +512,7 @@ extern void gistSplitByKey(Relation r, Page page, IndexTuple *itup,
 extern IndexBuildResult *gistbuild(Relation heap, Relation index,
 		  struct IndexInfo *indexInfo);
 extern void gistValidateBufferingOption(const char *value);
+extern void gist_parallel_build_main(dsm_segment *seg, shm_toc *toc);
 
 /* gistbuildbuffers.c */
 extern GISTBuildBuffers *gistInitBuildBuffers(int pagesPerBuffer, int levelStep,
