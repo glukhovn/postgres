@@ -718,22 +718,27 @@ gistpenalty(GISTSTATE *giststate, int attno,
  * Initialize a new index page
  */
 void
-GISTInitBuffer(Buffer b, uint32 f)
+GISTInitPage(Page page, Size pageSize, uint32 flags)
 {
 	GISTPageOpaque opaque;
-	Page		page;
-	Size		pageSize;
 
-	pageSize = BufferGetPageSize(b);
-	page = BufferGetPage(b);
 	PageInit(page, pageSize, sizeof(GISTPageOpaqueData));
 
 	opaque = GistPageGetOpaque(page);
 	/* page was already zeroed by PageInit, so this is not needed: */
 	/* memset(&(opaque->nsn), 0, sizeof(GistNSN)); */
 	opaque->rightlink = InvalidBlockNumber;
-	opaque->flags = f;
+	opaque->flags = flags;
 	opaque->gist_page_id = GIST_PAGE_ID;
+}
+
+void
+GISTInitBuffer(Buffer b, uint32 flags)
+{
+	Page		page = BufferGetPage(b);
+	Size		pageSize = BufferGetPageSize(b);
+
+	GISTInitPage(page, pageSize, flags);
 }
 
 /*

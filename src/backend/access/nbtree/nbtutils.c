@@ -123,7 +123,7 @@ _bt_mkscankey(Relation rel, IndexTuple itup)
  *		their own comparison routines.
  */
 ScanKey
-_bt_mkscankey_nodata(Relation rel)
+_bt_mkscankey_nodata(Relation rel, Oid *opfamilies)
 {
 	ScanKey		skey;
 	int			indnkeyatts;
@@ -144,7 +144,22 @@ _bt_mkscankey_nodata(Relation rel)
 		 * We can use the cached (default) support procs since no cross-type
 		 * comparison can be needed.
 		 */
-		procinfo = index_getprocinfo(rel, i + 1, BTORDER_PROC);
+		if (opfamilies)
+		{
+			Oid			atttype = rel->rd_att->attrs[i].atttypid;
+			Oid			procno = get_opfamily_proc(opfamilies[i], atttype, atttype, BTORDER_PROC);
+
+			if (!OidIsValid(procno))
+				elog(ERROR, "invalid btree opfamily: %d", opfamilies[i]);
+
+			procinfo = palloc(sizeof(*procinfo));
+			fmgr_info(procno, procinfo);
+		}
+		else
+		{
+			procinfo = index_getprocinfo(rel, i + 1, BTORDER_PROC);
+		}
+
 		flags = SK_ISNULL | (indoption[i] << SK_BT_INDOPTION_SHIFT);
 		ScanKeyEntryInitializeWithInfo(&skey[i],
 									   flags,

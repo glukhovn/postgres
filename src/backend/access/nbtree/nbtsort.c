@@ -87,19 +87,6 @@
  */
 
 /*
- * Status record for spooling/sorting phase.  (Note we may have two of
- * these due to the special requirements for uniqueness-checking with
- * dead tuples.)
- */
-typedef struct BTSpool
-{
-	Tuplesortstate *sortstate;	/* state data for tuplesort.c */
-	Relation	heap;
-	Relation	index;
-	bool		isunique;
-} BTSpool;
-
-/*
  * Status for index builds performed in parallel.  This is allocated in a
  * dynamic shared memory segment.  Note that there is a separate tuplesort TOC
  * entry, private to tuplesort.c but allocated by this module on its behalf.
@@ -206,6 +193,7 @@ typedef struct BTBuildState
 	bool		isunique;
 	bool		havedead;
 	Relation	heap;
+	Oid		   *opfamilies;
 	BTSpool    *spool;
 
 	/*
@@ -266,7 +254,7 @@ static double _bt_spools_heapscan(Relation heap, Relation index,
 static void _bt_spooldestroy(BTSpool *btspool);
 static void _bt_spool(BTSpool *btspool, ItemPointer self,
 		  Datum *values, bool *isnull);
-static void _bt_leafbuild(BTSpool *btspool, BTSpool *btspool2);
+static void _bt_leafbuild(void *cxt, BTSpool *btspool, BTSpool *btspool2);
 static void _bt_build_callback(Relation index, HeapTuple htup, Datum *values,
 				   bool *isnull, bool tupleIsAlive, void *state);
 static Page _bt_blnewpage(uint32 level);
@@ -291,11 +279,11 @@ static void _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 						   Sharedsort *sharedsort2, int sortmem);
 
 
-/*
- *	btbuild() -- build a new btree index.
- */
 IndexBuildResult *
-btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
+btbuild_internal(Relation heap, Relation index, IndexInfo *indexInfo,
+				 Oid *sortOpfamilies,
+				 void (*build)(void *cxt, BTSpool *, BTSpool *),
+				 void *cxt)
 {
 	IndexBuildResult *result;
 	BTBuildState buildstate;
@@ -313,12 +301,13 @@ btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	buildstate.spool2 = NULL;
 	buildstate.indtuples = 0;
 	buildstate.btleader = NULL;
+	buildstate.opfamilies = sortOpfamilies;
 
 	/*
 	 * We expect to be called exactly once for any index relation. If that's
 	 * not the case, big trouble's what we have.
 	 */
-	if (RelationGetNumberOfBlocks(index) != 0)
+	if (RelationGetNumberOfBlocks(index) != 0 && !sortOpfamilies)
 		elog(ERROR, "index \"%s\" already contains data",
 			 RelationGetRelationName(index));
 
@@ -329,7 +318,7 @@ btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	 * inserting the sorted tuples into btree pages and (3) building the upper
 	 * levels.  Finally, it may also be necessary to end use of parallelism.
 	 */
-	_bt_leafbuild(buildstate.spool, buildstate.spool2);
+	build(cxt, buildstate.spool, buildstate.spool2);
 	_bt_spooldestroy(buildstate.spool);
 	if (buildstate.spool2)
 		_bt_spooldestroy(buildstate.spool2);
@@ -350,6 +339,16 @@ btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 #endif							/* BTREE_BUILD_STATS */
 
 	return result;
+}
+
+/*
+ *	btbuild() -- build a new btree index.
+ */
+IndexBuildResult *
+btbuild(Relation heap, Relation index, IndexInfo *indexInfo)
+{
+	return btbuild_internal(heap, index, indexInfo,
+							NULL, _bt_leafbuild, NULL);
 }
 
 /*
@@ -425,6 +424,7 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 	 */
 	buildstate->spool->sortstate =
 		tuplesort_begin_index_btree(heap, index, buildstate->isunique,
+									buildstate->opfamilies,
 									maintenance_work_mem, coordinate,
 									false);
 
@@ -464,8 +464,9 @@ _bt_spools_heapscan(Relation heap, Relation index, BTBuildState *buildstate,
 		 * full, so we give it only work_mem
 		 */
 		buildstate->spool2->sortstate =
-			tuplesort_begin_index_btree(heap, index, false, work_mem,
-										coordinate2, false);
+			tuplesort_begin_index_btree(heap, index, false,
+										buildstate->opfamilies,
+										work_mem, coordinate2, false);
 	}
 
 	/* Fill spool using either serial or parallel heap scan */
@@ -513,7 +514,7 @@ _bt_spool(BTSpool *btspool, ItemPointer self, Datum *values, bool *isnull)
  * create an entire btree.
  */
 static void
-_bt_leafbuild(BTSpool *btspool, BTSpool *btspool2)
+_bt_leafbuild(void *cxt, BTSpool *btspool, BTSpool *btspool2)
 {
 	BTWriteState wstate;
 
@@ -605,7 +606,7 @@ _bt_blnewpage(uint32 level)
 /*
  * emit a completed btree page, and release the working storage.
  */
-static void
+void
 _bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 {
 	/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
@@ -1089,7 +1090,7 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 		/* the preparation of merge */
 		itup = tuplesort_getindextuple(btspool->sortstate, true);
 		itup2 = tuplesort_getindextuple(btspool2->sortstate, true);
-		indexScanKey = _bt_mkscankey_nodata(wstate->index);
+		indexScanKey = _bt_mkscankey_nodata(wstate->index, NULL);
 
 		/* Prepare SortSupport data for each column */
 		sortKeys = (SortSupport) palloc0(keysz * sizeof(SortSupportData));
@@ -1113,7 +1114,7 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 			strategy = (scanKey->sk_flags & SK_BT_DESC) != 0 ?
 				BTGreaterStrategyNumber : BTLessStrategyNumber;
 
-			PrepareSortSupportFromIndexRel(wstate->index, strategy, sortKey);
+			PrepareSortSupportFromIndexRel(wstate->index, InvalidOid, strategy, sortKey);
 		}
 
 		_bt_freeskey(indexScanKey);
@@ -1631,6 +1632,7 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 	btspool->sortstate = tuplesort_begin_index_btree(btspool->heap,
 													 btspool->index,
 													 btspool->isunique,
+													 NULL,
 													 sortmem, coordinate,
 													 false);
 
@@ -1654,6 +1656,7 @@ _bt_parallel_scan_and_sort(BTSpool *btspool, BTSpool *btspool2,
 		coordinate2->sharedsort = sharedsort2;
 		btspool2->sortstate =
 			tuplesort_begin_index_btree(btspool->heap, btspool->index, false,
+										NULL,
 										Min(sortmem, work_mem), coordinate2,
 										false);
 	}

@@ -19,6 +19,7 @@
 #include "access/genam.h"
 #include "access/gist_private.h"
 #include "access/gistxlog.h"
+#include "access/nbtree.h"
 #include "access/xloginsert.h"
 #include "catalog/index.h"
 #include "miscadmin.h"
@@ -105,6 +106,349 @@ static void gistMemorizeParent(GISTBuildState *buildstate, BlockNumber child,
 				   BlockNumber parent);
 static void gistMemorizeAllDownlinks(GISTBuildState *buildstate, Buffer parent);
 static BlockNumber gistGetParent(GISTBuildState *buildstate, BlockNumber child);
+
+typedef struct GistWriteState
+{
+	Relation	heap;
+	Relation	index;
+	bool		use_wal;
+	BlockNumber	pages_alloced;
+	BlockNumber	pages_written;
+	Page		zeropage;
+	GISTBuildState *buildstate;
+	GISTSTATE  *giststate;
+} GistWriteState;
+
+static Page
+gistNewPage(int level)
+{
+	Page		page = (Page) palloc(BLCKSZ);
+
+	/* Zero the page and set up standard page header info */
+	GISTInitPage(page, BLCKSZ, level ? 0 : F_LEAF);
+
+	return page;
+}
+
+static void
+gistSortAddTup(Page page, Size itemsize, IndexTuple itup,
+			   OffsetNumber itup_off)
+{
+	if (PageAddItem(page, (Item) itup, itemsize, itup_off,
+					false, false) == InvalidOffsetNumber)
+		elog(ERROR, "failed to add item to the index page");
+}
+
+static IndexTuple
+gistMakeUnionOfTuples(Relation index, GISTSTATE *giststate,
+					  IndexTuple *itvec, int len)
+{
+	Datum		attr[INDEX_MAX_KEYS];
+	bool		isnull[INDEX_MAX_KEYS];
+
+	gistMakeUnionItVec(giststate, itvec, len, attr, isnull);
+
+	return gistFormTuple(giststate, index, attr, isnull, false);
+}
+
+typedef struct GistPageState
+{
+	Page		btps_page;		/* workspace for page building */
+	BlockNumber btps_blkno;		/* block # to write this page at */
+	OffsetNumber btps_lastoff;	/* last item offset loaded */
+	uint32		btps_level;		/* tree level (0 = leaf) */
+	Size		btps_full;		/* "full" if less than this much free space */
+	struct GistPageState *btps_next;	/* link to parent level, if any */
+	IndexTuple	tuples[BLCKSZ / sizeof(IndexTupleData)];
+} GistPageState;
+
+static GistPageState *
+gistPageState(GistWriteState *wstate, uint32 level)
+{
+	GistPageState *state = (GistPageState *) palloc0(sizeof(*state));
+
+	/* create initial page for level */
+	state->btps_page = gistNewPage(level);
+
+	/* and assign it a page position */
+	state->btps_blkno = wstate->pages_alloced++;
+
+	/* initialize lastoff so first item goes into P_FIRSTKEY */
+	state->btps_lastoff = FirstOffsetNumber;
+	state->btps_level = level;
+
+	/* set "full" threshold based on level.  See notes at head of file. */
+	state->btps_full = wstate->buildstate->freespace; /* FIXME */
+
+	/* no parent level, yet */
+	state->btps_next = NULL;
+
+	return state;
+}
+
+/*
+ * Maximum size of a GiST index entry, including its tuple header.
+ *
+ * We actually need to be able to fit one items on every page,
+ * so restrict any one item to 1/1 the per-page available space.
+ */
+#define GistMaxItemSize(page) \
+	MAXALIGN_DOWN((PageGetPageSize(page) - \
+				   MAXALIGN(SizeOfPageHeaderData + 1*sizeof(ItemIdData)) - \
+				   MAXALIGN(sizeof(GISTPageOpaqueData))) / 1)
+
+static void
+gistBuildAdd(GistWriteState *wstate, GistPageState *state, IndexTuple itup);
+
+static void
+gistFinishPage(GistWriteState *wstate, GistPageState *state,
+			   BlockNumber blkno)
+{
+	int			i;
+	IndexTuple	unionTuple =
+		gistMakeUnionOfTuples(wstate->index, wstate->giststate,
+							  state->tuples, state->btps_lastoff - 1);
+
+	ItemPointerSetBlockNumber(&unionTuple->t_tid, blkno);
+
+	gistBuildAdd(wstate, state->btps_next, unionTuple);
+
+	for (i = 0; i < state->btps_lastoff - 1; i++)
+		pfree(state->tuples[i]);
+}
+
+extern void
+_bt_blwritepage(GistWriteState *wstate, Page page, BlockNumber blkno);
+
+static void
+gistBuildAdd(GistWriteState *wstate, GistPageState *state, IndexTuple itup)
+{
+	Page		npage;
+	BlockNumber nblkno;
+	OffsetNumber last_off;
+	Size		pgspc;
+	Size		itupsz;
+
+	/*
+	 * This is a handy place to check for cancel interrupts during the
+	 * gist load phase of index creation.
+	 */
+	CHECK_FOR_INTERRUPTS();
+
+	npage = state->btps_page;
+	nblkno = state->btps_blkno;
+	last_off = state->btps_lastoff;
+
+	pgspc = PageGetFreeSpace(npage);
+	itupsz = IndexTupleSize(itup);
+	itupsz = MAXALIGN(itupsz);
+
+	/*
+	 * Check whether the item can fit on a btree page at all. (Eventually, we
+	 * ought to try to apply TOAST methods if not.) We actually need to be
+	 * able to fit three items on every page, so restrict any one item to 1/3
+	 * the per-page available space. Note that at this point, itupsz doesn't
+	 * include the ItemId.
+	 *
+	 * NOTE: similar code appears in _bt_insertonpg() to defend against
+	 * oversize items being inserted into an already-existing index. But
+	 * during creation of an index, we don't go through there.
+	 */
+	if (itupsz > GistMaxItemSize(npage))
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
+						itupsz, GistMaxItemSize(npage),
+						RelationGetRelationName(wstate->index)),
+				 errhint("Values larger than 1/1 of a buffer page cannot be indexed.\n"
+						 "Consider a function index of an MD5 hash of the value, "
+						 "or use full text indexing."),
+				 errtableconstraint(wstate->heap,
+									RelationGetRelationName(wstate->index))));
+
+	/*
+	 * Check to see if page is "full".  It's definitely full if the item won't
+	 * fit.  Otherwise, compare to the target freespace derived from the
+	 * fillfactor.  However, we must put at least two items on each page, so
+	 * disregard fillfactor if we don't have that many.
+	 */
+	if (pgspc < itupsz ||
+		(pgspc < state->btps_full && last_off > FirstOffsetNumber))
+	{
+		/*
+		 * Finish off the page and write it out.
+		 */
+		Page		opage = npage;
+		BlockNumber oblkno = nblkno;
+
+		/* Create new page of same level */
+		npage = gistNewPage(state->btps_level);
+
+		/* and assign it a page position */
+		nblkno = wstate->pages_alloced++;
+
+		/*
+		 * Set the sibling links for both pages.
+		 */
+		GistPageGetOpaque(opage)->rightlink = nblkno;
+		GistPageGetOpaque(npage)->rightlink = InvalidBlockNumber;	/* redundant */
+
+		/*
+		 * Link the old page into its parent, using its minimum key. If we
+		 * don't have a parent, we have to create one; this adds a new btree
+		 * level.
+		 */
+		if (state->btps_next == NULL)
+			state->btps_next = gistPageState(wstate, state->btps_level + 1);
+
+		gistFinishPage(wstate, state, oblkno);
+
+		/*
+		 * Write out the old page.  We never need to touch it again, so we can
+		 * free the opage workspace too.
+		 */
+		_bt_blwritepage(wstate, opage, oblkno);
+
+		/*
+		 * Reset last_off to point to new page
+		 */
+		last_off = FirstOffsetNumber;
+	}
+
+	state->tuples[last_off - 1] = itup;// CopyIndexTuple(itup);
+
+	/*
+	 * Add the new item into the current page.
+	 */
+	gistSortAddTup(npage, itupsz, itup, last_off);
+	last_off = OffsetNumberNext(last_off);
+
+	state->btps_page = npage;
+	state->btps_blkno = nblkno;
+	state->btps_lastoff = last_off;
+}
+
+static void
+gistUpperShutdown(GistWriteState *wstate, GistPageState *state)
+{
+	GistPageState *s;
+
+	/*
+	 * Each iteration of this loop completes one more level of the tree.
+	 */
+	for (s = state; s != NULL; s = s->btps_next)
+	{
+		BlockNumber blkno = s->btps_blkno;
+
+		/*
+		 * We have to link the last page on this level to somewhere.
+		 *
+		 * If we're at the top, it's the root, so attach it to the metapage.
+		 * Otherwise, add an entry for it to its parent using its minimum key.
+		 * This may cause the last page of the parent level to split, but
+		 * that's not a problem -- we haven't gotten to it yet.
+		 */
+		if (s->btps_next == NULL)
+		{
+			Page		page;
+			Buffer		buffer;
+
+			s->btps_blkno = GIST_ROOT_BLKNO;
+
+			buffer = ReadBuffer(wstate->index, GIST_ROOT_BLKNO);
+			LockBuffer(buffer, GIST_EXCLUSIVE);
+			page = BufferGetPage(buffer);
+			memcpy(page, s->btps_page, BLCKSZ);
+			UnlockReleaseBuffer(buffer);
+		}
+		else
+			gistFinishPage(wstate, s, blkno);
+
+		_bt_blwritepage(wstate, s->btps_page, s->btps_blkno);
+		s->btps_page = NULL;	/* writepage freed the workspace */
+	}
+}
+
+static void
+gistLoad(GistWriteState *wstate, BTSpool *btspool)
+{
+	GistPageState *state = NULL;
+	IndexTuple	itup;
+
+	while ((itup = tuplesort_getindextuple(btspool->sortstate, true)) != NULL)
+	{
+		IndexTuple	itup2;
+		Datum		values[INDEX_MAX_KEYS];
+		bool		isnull[INDEX_MAX_KEYS];
+
+		index_deform_tuple(itup, wstate->index->rd_att, values, isnull);
+		itup2 = gistFormTuple(wstate->giststate, wstate->index,
+							  values, isnull,
+							  true /* size is currently bogus */ );
+
+		ItemPointerCopy(&itup->t_tid, &itup2->t_tid);
+
+		/* When we see first tuple, create first index page */
+		if (state == NULL)
+			state = gistPageState(wstate, 0);
+
+		gistBuildAdd(wstate, state, itup2);
+	}
+
+	/* Close down final pages and write the metapage */
+	gistUpperShutdown(wstate, state);
+
+	/*
+	 * If the index is WAL-logged, we must fsync it down to disk before it's
+	 * safe to commit the transaction.  (For a non-WAL-logged index we don't
+	 * care since the index will be uninteresting after a crash anyway.)
+	 *
+	 * It's obvious that we must do this when not WAL-logging the build. It's
+	 * less obvious that we have to do it even if we did WAL-log the index
+	 * pages.  The reason is that since we're building outside shared buffers,
+	 * a CHECKPOINT occurring during the build has no way to flush the
+	 * previously written data to disk (indeed it won't know the index even
+	 * exists).  A crash later on would replay WAL from the checkpoint,
+	 * therefore it wouldn't replay our earlier WAL entries. If we do not
+	 * fsync those pages here, they might still not be on disk when the crash
+	 * occurs.
+	 */
+	if (RelationNeedsWAL(wstate->index))
+	{
+		RelationOpenSmgr(wstate->index);
+		smgrimmedsync(wstate->index->rd_smgr, MAIN_FORKNUM);
+	}
+}
+
+static void
+gistLeafBuild(void *cxt, BTSpool *btspool, BTSpool *btspool2)
+{
+	GistWriteState wstate;
+	GISTBuildState *buildstate = cxt;
+
+	Assert(!btspool2);
+
+	tuplesort_performsort(btspool->sortstate);
+
+	wstate.heap = btspool->heap;
+	wstate.index = btspool->index;
+	wstate.buildstate = buildstate;
+	wstate.giststate = buildstate->giststate;
+
+	/*
+	 * We need to log index creation in WAL iff WAL archiving/streaming
+	 * is enabled UNLESS the index isn't WAL-logged anyway.
+	 */
+	wstate.use_wal = XLogIsNeeded() && RelationNeedsWAL(wstate.index);
+
+	/* reserve the metapage */
+	wstate.pages_alloced = GIST_ROOT_BLKNO + 1;
+	wstate.pages_written = 0;
+	wstate.zeropage = NULL;	/* until needed */
+
+	gistLoad(&wstate, btspool);
+}
+
 
 /*
  * Main entry point to GiST index build. Initially calls insert over and over,
@@ -196,6 +540,16 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	UnlockReleaseBuffer(buffer);
 
 	END_CRIT_SECTION();
+
+	if (getenv("PG_GIST_BTOPF"))
+	{
+		Oid		opfamilies[INDEX_MAX_KEYS] = {0};
+
+		opfamilies[0] = atoi(getenv("PG_GIST_BTOPF"));
+
+		return btbuild_internal(heap, index, indexInfo,
+								opfamilies, gistLeafBuild, &buildstate);
+	}
 
 	/* build the index */
 	buildstate.indtuples = 0;

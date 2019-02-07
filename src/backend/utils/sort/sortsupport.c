@@ -158,16 +158,32 @@ PrepareSortSupportFromOrderingOp(Oid orderingOp, SortSupport ssup)
  * comparator function pointer.
  */
 void
-PrepareSortSupportFromIndexRel(Relation indexRel, int16 strategy,
-							   SortSupport ssup)
+PrepareSortSupportFromIndexRel(Relation indexRel, Oid opfamily,
+							   int16 strategy, SortSupport ssup)
 {
-	Oid			opfamily = indexRel->rd_opfamily[ssup->ssup_attno - 1];
-	Oid			opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
+	Oid			opcintype;
 
 	Assert(ssup->comparator == NULL);
 
-	if (indexRel->rd_rel->relam != BTREE_AM_OID)
-		elog(ERROR, "unexpected non-btree AM: %u", indexRel->rd_rel->relam);
+	if (OidIsValid(opfamily))
+	{
+		opcintype = indexRel->rd_att->attrs[ssup->ssup_attno - 1].atttypid;
+		/*
+		opcintype = indexRel->rd_opckeytype[ssup->ssup_attno - 1];
+		if (!OidIsValid(opcintype))
+			opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
+		*/
+	}
+	else
+	{
+		if (indexRel->rd_rel->relam != BTREE_AM_OID)
+			elog(ERROR, "unexpected non-btree AM: %u",
+				 indexRel->rd_rel->relam);
+
+		opfamily = indexRel->rd_opfamily[ssup->ssup_attno - 1];
+		opcintype = indexRel->rd_opcintype[ssup->ssup_attno - 1];
+	}
+
 	if (strategy != BTGreaterStrategyNumber &&
 		strategy != BTLessStrategyNumber)
 		elog(ERROR, "unexpected sort support strategy: %d", strategy);

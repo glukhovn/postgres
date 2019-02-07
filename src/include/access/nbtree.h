@@ -22,6 +22,7 @@
 #include "lib/stringinfo.h"
 #include "storage/bufmgr.h"
 #include "storage/shm_toc.h"
+#include "utils/tuplesort.h"
 
 /* There's room for a 16-bit vacuum cycle ID in BTPageOpaqueData */
 typedef uint16 BTCycleId;
@@ -577,7 +578,7 @@ extern Buffer _bt_get_endpoint(Relation rel, uint32 level, bool rightmost,
  * prototypes for functions in nbtutils.c
  */
 extern ScanKey _bt_mkscankey(Relation rel, IndexTuple itup);
-extern ScanKey _bt_mkscankey_nodata(Relation rel);
+extern ScanKey _bt_mkscankey_nodata(Relation rel, Oid *opfamilies);
 extern void _bt_freeskey(ScanKey skey);
 extern void _bt_freestack(BTStack stack);
 extern void _bt_preprocess_array_keys(IndexScanDesc scan);
@@ -614,5 +615,24 @@ extern bool btvalidate(Oid opclassoid);
 extern IndexBuildResult *btbuild(Relation heap, Relation index,
 		struct IndexInfo *indexInfo);
 extern void _bt_parallel_build_main(dsm_segment *seg, shm_toc *toc);
+
+/*
+ * Status record for spooling/sorting phase.  (Note we may have two of
+ * these due to the special requirements for uniqueness-checking with
+ * dead tuples.)
+ */
+typedef struct BTSpool
+{
+	Tuplesortstate *sortstate;	/* state data for tuplesort.c */
+	Relation	heap;
+	Relation	index;
+	bool		isunique;
+} BTSpool;
+
+extern IndexBuildResult *
+btbuild_internal(Relation heap, Relation index, struct IndexInfo *indexInfo,
+				 Oid *sortOpfamilies,
+				 void (*buildCallback)(void *cxt, BTSpool *, BTSpool *),
+				 void *cxt);
 
 #endif							/* NBTREE_H */

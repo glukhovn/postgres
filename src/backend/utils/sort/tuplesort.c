@@ -919,7 +919,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 
 	state->tupDesc = tupDesc;	/* assume we need not copy tupDesc */
 
-	indexScanKey = _bt_mkscankey_nodata(indexRel);
+	indexScanKey = _bt_mkscankey_nodata(indexRel, NULL);
 
 	if (state->indexInfo->ii_Expressions != NULL)
 	{
@@ -961,7 +961,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 		strategy = (scanKey->sk_flags & SK_BT_DESC) != 0 ?
 			BTGreaterStrategyNumber : BTLessStrategyNumber;
 
-		PrepareSortSupportFromIndexRel(indexRel, strategy, sortKey);
+		PrepareSortSupportFromIndexRel(indexRel, InvalidOid, strategy, sortKey);
 	}
 
 	_bt_freeskey(indexScanKey);
@@ -975,6 +975,7 @@ Tuplesortstate *
 tuplesort_begin_index_btree(Relation heapRel,
 							Relation indexRel,
 							bool enforceUnique,
+							Oid *sortOpfamilies,
 							int workMem,
 							SortCoordinate coordinate,
 							bool randomAccess)
@@ -1014,7 +1015,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 	state->indexRel = indexRel;
 	state->enforceUnique = enforceUnique;
 
-	indexScanKey = _bt_mkscankey_nodata(indexRel);
+	indexScanKey = _bt_mkscankey_nodata(indexRel, sortOpfamilies);
 
 	/* Prepare SortSupport data for each column */
 	state->sortKeys = (SortSupport) palloc0(state->nKeys *
@@ -1025,6 +1026,8 @@ tuplesort_begin_index_btree(Relation heapRel,
 		SortSupport sortKey = state->sortKeys + i;
 		ScanKey		scanKey = indexScanKey + i;
 		int16		strategy;
+		Oid			sortOpfamily =
+			sortOpfamilies ? sortOpfamilies[scanKey->sk_attno - 1] : InvalidOid;
 
 		sortKey->ssup_cxt = CurrentMemoryContext;
 		sortKey->ssup_collation = scanKey->sk_collation;
@@ -1039,7 +1042,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 		strategy = (scanKey->sk_flags & SK_BT_DESC) != 0 ?
 			BTGreaterStrategyNumber : BTLessStrategyNumber;
 
-		PrepareSortSupportFromIndexRel(indexRel, strategy, sortKey);
+		PrepareSortSupportFromIndexRel(indexRel, sortOpfamily, strategy, sortKey);
 	}
 
 	_bt_freeskey(indexScanKey);
