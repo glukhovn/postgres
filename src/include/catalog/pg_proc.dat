@@ -7789,6 +7789,16 @@
   proargtypes => 'internal polygon int2 oid internal',
   prosrc => 'gist_poly_distance' },
 
+{ oid => '3429', descr => 'Z-order of point',
+  proname => 'point_zorder', prorettype => 'int8', proargtypes => 'point',
+  prosrc => 'point_zorder' },
+{ oid => '3430', descr => 'Z-order comparison for points',
+  proname => 'point_zorder_cmp', prorettype => 'int4',
+  proargtypes => 'point point', prosrc => 'point_zorder_cmp' },
+{ oid => '3431', descr => 'Z-order comparison for boxes',
+  proname => 'box_zorder_cmp', prorettype => 'int4', proargtypes => 'box box',
+  prosrc => 'box_zorder_cmp' },
+
 # GIN array support
 { oid => '2743', descr => 'GIN array support',
   proname => 'ginarrayextract', prorettype => 'internal',

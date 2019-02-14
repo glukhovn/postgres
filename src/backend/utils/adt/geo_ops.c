@@ -5433,3 +5433,85 @@ pg_hypot(float8 x, float8 y)
 
 	return result;
 }
+
+
+static int64
+part_bits32_by2(uint32 x)
+{
+	uint64		n = x;
+
+	n = (n | (n << 16)) & 0x0000FFFF0000FFFF;
+	n = (n | (n <<  8)) & 0x00FF00FF00FF00FF;
+	n = (n | (n <<  4)) & 0x0F0F0F0F0F0F0F0F;
+	n = (n | (n <<  2)) & 0x3333333333333333;
+	n = (n | (n <<  1)) & 0x5555555555555555;
+
+	return n;
+}
+
+static int64
+interleave_bits32(uint32 x, uint32 y)
+{
+	return part_bits32_by2(x) | (part_bits32_by2(y) << 1);
+}
+
+static inline uint64
+point_zorder_internal(Point *p)
+{
+	return interleave_bits32(p->x, p->y);
+}
+
+Datum
+point_zorder(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(point_zorder_internal(PG_GETARG_POINT_P(0)));
+}
+
+Datum
+point_zorder_cmp(PG_FUNCTION_ARGS)
+{
+	Point	   *p1 = PG_GETARG_POINT_P(0);
+	Point	   *p2 = PG_GETARG_POINT_P(1);
+	uint64		z1 = point_zorder_internal(p1);
+	uint64		z2 = point_zorder_internal(p2);
+
+	PG_RETURN_INT32(z1 == z2 ? 0 : z1 > z2 ? 1 : -1);
+}
+
+static void
+box_zorder_internal(BOX *b, uint64 *lop, uint64 *hip)
+{
+	uint64		lo = point_zorder_internal(&b->low);
+	uint64		hi = point_zorder_internal(&b->high);
+
+	*lop = interleave_bits32((uint32) lo, (uint32) hi);
+	*hip = interleave_bits32((uint32) (lo >> 32), (uint32) (hi >> 32));
+}
+
+Datum
+box_zorder_cmp(PG_FUNCTION_ARGS)
+{
+	BOX		   *b1 = PG_GETARG_BOX_P(0);
+	BOX		   *b2 = PG_GETARG_BOX_P(1);
+	uint64		lo1;
+	uint64		lo2;
+	uint64		hi1;
+	uint64		hi2;
+
+	box_zorder_internal(b1, &lo1, &hi1);
+	box_zorder_internal(b2, &lo2, &hi2);
+
+	if (hi1 > hi2)
+		PG_RETURN_INT32(1);
+
+	if (hi1 < hi2)
+		PG_RETURN_INT32(-1);
+
+	if (lo1 > lo2)
+		PG_RETURN_INT32(1);
+
+	if (lo1 < lo2)
+		PG_RETURN_INT32(-1);
+
+	PG_RETURN_INT32(0);
+}
