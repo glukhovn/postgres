@@ -1014,8 +1014,25 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 								index_clauses,
 								&orderbyclauses,
 								&orderbyclausecols);
+
 		if (orderbyclauses)
-			useful_pathkeys = root->query_pathkeys;
+		{
+			int			norderbys = list_length(orderbyclauses);
+			int			npathkeys = list_length(root->query_pathkeys);
+
+			if (norderbys < npathkeys)
+			{
+				/*
+				 * We do not accept pathkey sublists until we implement
+				 * partial sorting.
+				 */
+				useful_pathkeys = NIL;
+				orderbyclauses = NIL;
+				orderbyclausecols = NIL;
+			}
+			else
+				useful_pathkeys = root->query_pathkeys;
+		}
 		else
 			useful_pathkeys = NIL;
 	}
@@ -3286,8 +3303,7 @@ expand_indexqual_rowcompare(RestrictInfo *rinfo,
  * index column numbers (zero based) that each clause would be used with.
  * NIL lists are returned if the ordering is not achievable this way.
  *
- * On success, the result list is ordered by pathkeys, and in fact is
- * one-to-one with the requested pathkeys.
+ * On success, the result list is ordered by pathkeys.
  */
 static void
 match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
@@ -3305,8 +3321,8 @@ match_pathkeys_to_index(IndexOptInfo *index, List *pathkeys,
 		ammatchorderby(index, pathkeys, index_clauses,
 					   &orderby_clauses, &orderby_clause_columns))
 	{
-		Assert(list_length(pathkeys) == list_length(orderby_clauses));
-		Assert(list_length(pathkeys) == list_length(orderby_clause_columns));
+		Assert(list_length(orderby_clauses) <= list_length(pathkeys));
+		Assert(list_length(orderby_clauses) == list_length(orderby_clause_columns));
 
 		*orderby_clauses_p = orderby_clauses;	/* success! */
 		*orderby_clause_columns_p = orderby_clause_columns;
