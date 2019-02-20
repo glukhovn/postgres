@@ -459,6 +459,12 @@ typedef struct BTScanStateData
 	/* keep these last in struct for efficiency */
 	BTScanPosData currPos;		/* current position data */
 	BTScanPosData markPos;		/* marked position, if any */
+
+	/* KNN-search fields: */
+	Datum		currDistance;	/* current distance */
+	Datum		markDistance;	/* marked distance */
+	bool		currIsNull;		/* current item is NULL */
+	bool		markIsNull;		/* marked item is NULL */
 } BTScanStateData;
 
 typedef BTScanStateData *BTScanState;
@@ -479,7 +485,18 @@ typedef struct BTScanOpaqueData
 	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
 	MemoryContext arrayContext; /* scan-lifespan context for array data */
 
-	BTScanStateData	state;
+	BTScanStateData state;		/* main scan state */
+
+	/* kNN-search fields: */
+	BTScanState knnState;		/* optional scan state for kNN search */
+	bool		useBidirectionalKnnScan;	/* use bidirectional kNN scan? */
+	ScanDirection scanDirection;	/* selected scan direction for
+									 * unidirectional kNN scan */
+	FmgrInfo	distanceCmpProc;	/* distance comparison procedure */
+	int16		distanceTypeLen;	/* distance typlen */
+	bool		distanceTypeByVal;	/* distance typebyval */
+	bool		currRightIsNearest; /* current right item is nearest */
+	bool		markRightIsNearest; /* marked right item is nearest */
 } BTScanOpaqueData;
 
 typedef BTScanOpaqueData *BTScanOpaque;
@@ -525,10 +542,11 @@ extern bool btcanreturn(Relation index, int attno);
 /*
  * prototypes for internal functions in nbtree.c
  */
-extern bool _bt_parallel_seize(IndexScanDesc scan, BlockNumber *pageno);
-extern void _bt_parallel_release(IndexScanDesc scan, BlockNumber scan_page);
-extern void _bt_parallel_done(IndexScanDesc scan);
+extern bool _bt_parallel_seize(IndexScanDesc scan, BTScanState state, BlockNumber *pageno);
+extern void _bt_parallel_release(IndexScanDesc scan, BTScanState state, BlockNumber scan_page);
+extern void _bt_parallel_done(IndexScanDesc scan, BTScanState state);
 extern void _bt_parallel_advance_array_keys(IndexScanDesc scan);
+
 
 /*
  * prototypes for functions in nbtinsert.c
@@ -610,6 +628,9 @@ extern bool btproperty(Oid index_oid, int attno,
 extern IndexTuple _bt_nonkey_truncate(Relation rel, IndexTuple itup);
 extern bool _bt_check_natts(Relation rel, Page page, OffsetNumber offnum);
 extern void _bt_allocate_tuple_workspaces(BTScanState state);
+extern void _bt_init_distance_comparison(IndexScanDesc scan);
+extern int _bt_init_knn_start_keys(IndexScanDesc scan, ScanKey *startKeys,
+						ScanKey bufKeys);
 
 /*
  * prototypes for functions in nbtvalidate.c
