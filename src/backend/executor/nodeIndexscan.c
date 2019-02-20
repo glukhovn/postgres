@@ -1644,6 +1644,27 @@ ExecIndexBuildScanKeys(PlanState *planstate, Relation index,
 								   InvalidOid,	/* no reg proc for this */
 								   (Datum) 0);	/* constant */
 		}
+		else if (IsA(clause, Var))
+		{
+			/* indexkey IS NULL or indexkey IS NOT NULL */
+			Var		   *var = (Var *) clause;
+
+			Assert(isorderby);
+
+			if (var->varno != INDEX_VAR)
+				elog(ERROR, "Var indexqual has wrong key");
+
+			varattno = var->varattno;
+
+			ScanKeyEntryInitialize(this_scan_key,
+								   SK_ORDER_BY | SK_SEARCHNOTNULL,
+								   varattno,	/* attribute number to scan */
+								   InvalidStrategy, /* no strategy */
+								   InvalidOid,	/* no strategy subtype */
+								   var->varcollid,	/* collation FIXME */
+								   InvalidOid,	/* no reg proc for this */
+								   (Datum) 0);	/* constant */
+		}
 		else
 			elog(ERROR, "unsupported indexqual type: %d",
 				 (int) nodeTag(clause));

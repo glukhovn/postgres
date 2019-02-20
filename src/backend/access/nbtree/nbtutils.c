@@ -905,10 +905,6 @@ _bt_preprocess_keys(IndexScanDesc scan)
 	{
 		ScanKey		ord = scan->orderByData;
 
-		if (scan->numberOfOrderBys > 1)
-			/* it should not happen, see btmatchorderby() */
-			elog(ERROR, "only one btree ordering operator is supported");
-
 		Assert(ord->sk_strategy == BtreeKNNSearchStrategyNumber);
 
 		/* use bidirectional kNN scan by default */

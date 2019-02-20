@@ -345,12 +345,21 @@ FROM tenk1
 WHERE thousand = 120
 ORDER BY tenthous <-> 3500;
 
--- IN restriction on the first column is not supported
+-- IN restriction on the first column is not supported without 'ORDER BY col1 ASC'
 EXPLAIN (COSTS OFF)
-SELECT thousand, tenthous
-FROM tenk1
-WHERE thousand IN (5, 120, 3456, 23)
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
 ORDER BY tenthous <-> 3500;
+
+EXPLAIN (COSTS OFF)
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
+ORDER BY thousand DESC, tenthous <-> 3500;
+
+EXPLAIN (COSTS OFF)
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
+ORDER BY thousand, tenthous <-> 3500;
+
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
+ORDER BY thousand, tenthous <-> 3500;
 
 -- Test kNN search using 4-column index
 CREATE INDEX tenk1_knn_idx ON tenk1(ten, hundred, thousand, tenthous);
@@ -378,18 +387,55 @@ WHERE ten = 3 AND hundred = 43 AND thousand = 643 ORDER BY tenthous <-> 4000;
 SELECT ten, hundred, thousand, tenthous FROM tenk1
 WHERE ten = 3 AND hundred = 43 AND thousand = 643 ORDER BY tenthous <-> 4000;
 
--- Not supported by tenk1_knn_idx (not all previous columns are eq-restricted)
+-- Array ops on non-first columns are not supported
 EXPLAIN (COSTS OFF)
 SELECT ten, hundred, thousand, tenthous FROM tenk1
-WHERE hundred = 43 AND thousand = 643 ORDER BY tenthous <-> 4000;
+WHERE ten IN (3, 4, 5) AND hundred IN (23, 24, 35) AND thousand IN (843, 132, 623, 243)
+ORDER BY tenthous <-> 6000;
+
+-- All array columns should be included into ORDER BY
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY tenthous <-> 6000;
+
+-- Eq-restricted columns can be omitted from ORDER BY
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, tenthous <-> 6000;
+
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, tenthous <-> 6000;
 
 EXPLAIN (COSTS OFF)
 SELECT ten, hundred, thousand, tenthous FROM tenk1
-WHERE ten = 3 AND hundred = 43 ORDER BY tenthous <-> 4000;
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, hundred, tenthous <-> 6000;
+
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, hundred, tenthous <-> 6000;
 
 EXPLAIN (COSTS OFF)
 SELECT ten, hundred, thousand, tenthous FROM tenk1
-WHERE ten = 3 AND thousand = 643 ORDER BY tenthous <-> 4000;
+WHERE ten IN (3, 4 ,5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, thousand, tenthous <-> 6000;
+
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, thousand, tenthous <-> 6000;
+
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, hundred, thousand, tenthous <-> 6000;
+
+-- Extra ORDER BY columns after order-by-op are not supported
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 ORDER BY ten, thousand <-> 6000, tenthous;
 
 DROP INDEX tenk1_knn_idx;
 

@@ -2945,6 +2945,62 @@ match_rowcompare_to_indexcol(RestrictInfo *rinfo,
 	return NULL;
 }
 
+/*
+ * Try to match pathkey to the specified index column (*indexcol >= 0) or
+ * to all index columns (*indexcol < 0).
+ */
+Expr *
+match_pathkey_to_indexcol(IndexOptInfo *index, PathKey *pathkey, int *indexcol)
+{
+	ListCell   *lc;
+
+	/* Pathkey must request default sort order for the target opfamily */
+	if (pathkey->pk_strategy != BTLessStrategyNumber ||
+		pathkey->pk_nulls_first)
+		return NULL;
+
+	/* If eclass is volatile, no hope of using an indexscan */
+	if (pathkey->pk_eclass->ec_has_volatile)
+		return NULL;
+
+	/*
+	 * Try to match eclass member expression(s) to index.  Note that child
+	 * EC members are considered, but only when they belong to the target
+	 * relation.  (Unlike regular members, the same expression could be a
+	 * child member of more than one EC.  Therefore, the same index could
+	 * be considered to match more than one pathkey list, which is OK
+	 * here.  See also get_eclass_for_sort_expr.)
+	 */
+	foreach(lc, pathkey->pk_eclass->ec_members)
+	{
+		EquivalenceMember *member = lfirst_node(EquivalenceMember, lc);
+		Expr	   *expr = member->em_expr;
+
+		/* No possibility of match if it references other relations */
+		if (!bms_equal(member->em_relids, index->rel->relids))
+			continue;
+
+		/* If *indexcol is non-negative then try to match only to it */
+		if (*indexcol >= 0)
+		{
+			if (match_index_to_operand((Node *) expr, *indexcol, index))
+				/* don't want to look at remaining members */
+				return expr;
+		}
+		else	/* try to match all columns */
+		{
+			for (*indexcol = 0; *indexcol < index->nkeycolumns; ++*indexcol)
+			{
+				if (match_index_to_operand((Node *) expr, *indexcol, index))
+					/* don't want to look at remaining members */
+					return expr;
+			}
+		}
+	}
+
+	return NULL;
+}
+
 /****************************************************************************
  *				----  ROUTINES TO CHECK ORDERING OPERATORS	----
  ****************************************************************************/

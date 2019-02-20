@@ -509,8 +509,8 @@ btrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 
 	if (orderbys && scan->numberOfOrderBys > 0)
 		memmove(scan->orderByData,
-				orderbys,
-				scan->numberOfOrderBys * sizeof(ScanKeyData));
+				&orderbys[scan->numberOfOrderBys - 1],
+				1 /* scan->numberOfOrderBys */ * sizeof(ScanKeyData));
 
 	so->scanDirection = NoMovementScanDirection;
 	so->distanceTypeByVal = true;
@@ -1554,13 +1554,15 @@ static bool
 btmatchorderby(IndexOptInfo *index, List *pathkeys, List *index_clauses,
 			   List **orderby_clauses_p, List **orderby_clausecols_p)
 {
-	Expr	   *expr;
+	Expr	   *expr = NULL;
 	ListCell   *lc;
 	int			indexcol;
 	int			num_eq_cols = 0;
+	int			nsaops = 0;
+	int			last_saop_ord_col = -1;
+	bool		saops[INDEX_MAX_KEYS] = {0};
 
-	/* only one ORDER BY clause is supported */
-	if (list_length(pathkeys) != 1)
+	if (list_length(pathkeys) < 1)
 		return false;
 
 	/*
@@ -1584,6 +1586,7 @@ btmatchorderby(IndexOptInfo *index, List *pathkeys, List *index_clauses,
 			Expr	   *clause = rinfo->clause;
 			Oid			opno;
 			StrategyNumber strat;
+			bool		is_saop;
 
 			if (!clause)
 				continue;
@@ -1593,6 +1596,18 @@ btmatchorderby(IndexOptInfo *index, List *pathkeys, List *index_clauses,
 				OpExpr	   *opexpr = (OpExpr *) clause;
 
 				opno = opexpr->opno;
+				is_saop = false;
+			}
+			else if (IsA(clause, ScalarArrayOpExpr))
+			{
+				ScalarArrayOpExpr *saop = (ScalarArrayOpExpr *) clause;
+
+				/* We only accept ANY clauses, not ALL */
+				if (!saop->useOr)
+					continue;
+
+				opno = saop->opno;
+				is_saop = true;
 			}
 			else
 			{
@@ -1603,19 +1618,67 @@ btmatchorderby(IndexOptInfo *index, List *pathkeys, List *index_clauses,
 			/* Check if the operator is btree equality operator. */
 			strat = get_op_opfamily_strategy(opno, index->opfamily[indexcol]);
 
-			if (strat == BTEqualStrategyNumber)
-				num_eq_cols = indexcol + 1;
+			if (strat != BTEqualStrategyNumber)
+				continue;
+
+			if (is_saop && indexcol == num_eq_cols)
+			{
+				saops[indexcol] = true;
+				nsaops++;
+			}
+			else if (!is_saop && saops[indexcol])
+			{
+				saops[indexcol] = false;
+				nsaops--;
+			}
+
+			num_eq_cols = indexcol + 1;
 		}
 	}
 
-	/*
-	 * If there are no equality columns try to match only the first column,
-	 * otherwise try all columns.
-	 */
-	indexcol = num_eq_cols ? -1 : 0;
+	foreach(lc, pathkeys)
+	{
+		PathKey    *pathkey = lfirst_node(PathKey, lc);
 
-	expr = match_orderbyop_pathkey(index, castNode(PathKey, linitial(pathkeys)),
-								   &indexcol);
+		/*
+		 * If there are no equality columns try to match only the first column,
+		 * otherwise try all columns.
+		 */
+		indexcol = num_eq_cols ? -1 : 0;
+
+		if ((expr = match_orderbyop_pathkey(index, pathkey, &indexcol)))
+			break;	/* found order-by-operator pathkey */
+
+		if (!num_eq_cols)
+			return false;	/* first pathkey is not order-by-operator */
+
+		indexcol = -1;
+
+		if (!(expr = match_pathkey_to_indexcol(index, pathkey, &indexcol)))
+			return false;
+
+		if (indexcol >= num_eq_cols)
+			return false;
+
+		if (saops[indexcol])
+		{
+			saops[indexcol] = false;
+			nsaops--;
+
+			/*
+			 * ORDER BY column numbers for array ops should go in
+			 * non-decreasing order.
+			 */
+			if (indexcol < last_saop_ord_col)
+				return false;
+
+			last_saop_ord_col = indexcol;
+		}
+		/* else: order of equality-restricted columns is arbitrary */
+
+		*orderby_clauses_p = lappend(*orderby_clauses_p, expr);
+		*orderby_clausecols_p = lappend_int(*orderby_clausecols_p, -indexcol - 1);
+	}
 
 	if (!expr)
 		return false;
@@ -1626,6 +1689,19 @@ btmatchorderby(IndexOptInfo *index, List *pathkeys, List *index_clauses,
 	 */
 	if (indexcol > num_eq_cols)
 		return false;
+
+	if (nsaops)
+	{
+		int			i;
+
+		/*
+		 * Check that all preceding array-op columns are included into
+		 * ORDER BY clause.
+		 */
+		for (i = 0; i < indexcol; i++)
+			if (saops[i])
+				return false;
+	}
 
 	/* Return first ORDER BY clause's expression and column. */
 	*orderby_clauses_p = lappend(*orderby_clauses_p, expr);

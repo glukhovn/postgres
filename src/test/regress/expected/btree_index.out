@@ -876,11 +876,9 @@ ORDER BY tenthous <-> 3500;
       120 |     9120
 (10 rows)
 
--- IN restriction on the first column is not supported
+-- IN restriction on the first column is not supported without 'ORDER BY col1 ASC'
 EXPLAIN (COSTS OFF)
-SELECT thousand, tenthous
-FROM tenk1
-WHERE thousand IN (5, 120, 3456, 23)
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
 ORDER BY tenthous <-> 3500;
                              QUERY PLAN                              
 ---------------------------------------------------------------------
@@ -889,6 +887,63 @@ ORDER BY tenthous <-> 3500;
    ->  Index Only Scan using tenk1_thous_tenthous on tenk1
          Index Cond: (thousand = ANY ('{5,120,3456,23}'::integer[]))
 (4 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
+ORDER BY thousand DESC, tenthous <-> 3500;
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Sort
+   Sort Key: thousand DESC, ((tenthous <-> 3500))
+   ->  Index Only Scan using tenk1_thous_tenthous on tenk1
+         Index Cond: (thousand = ANY ('{5,120,3456,23}'::integer[]))
+(4 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
+ORDER BY thousand, tenthous <-> 3500;
+                          QUERY PLAN                           
+---------------------------------------------------------------
+ Index Only Scan using tenk1_thous_tenthous on tenk1
+   Index Cond: (thousand = ANY ('{5,120,3456,23}'::integer[]))
+   Order By: (thousand AND (tenthous <-> 3500))
+(3 rows)
+
+SELECT thousand, tenthous FROM tenk1 WHERE thousand IN (5, 120, 3456, 23)
+ORDER BY thousand, tenthous <-> 3500;
+ thousand | tenthous 
+----------+----------
+        5 |     3005
+        5 |     4005
+        5 |     2005
+        5 |     5005
+        5 |     1005
+        5 |     6005
+        5 |        5
+        5 |     7005
+        5 |     8005
+        5 |     9005
+       23 |     3023
+       23 |     4023
+       23 |     2023
+       23 |     5023
+       23 |     1023
+       23 |     6023
+       23 |       23
+       23 |     7023
+       23 |     8023
+       23 |     9023
+      120 |     3120
+      120 |     4120
+      120 |     2120
+      120 |     5120
+      120 |     1120
+      120 |     6120
+      120 |      120
+      120 |     7120
+      120 |     8120
+      120 |     9120
+(30 rows)
 
 -- Test kNN search using 4-column index
 CREATE INDEX tenk1_knn_idx ON tenk1(ten, hundred, thousand, tenthous);
@@ -1122,38 +1177,132 @@ WHERE ten = 3 AND hundred = 43 AND thousand = 643 ORDER BY tenthous <-> 4000;
    3 |      43 |      643 |     9643
 (10 rows)
 
--- Not supported by tenk1_knn_idx (not all previous columns are eq-restricted)
+-- Array ops on non-first columns are not supported
 EXPLAIN (COSTS OFF)
 SELECT ten, hundred, thousand, tenthous FROM tenk1
-WHERE hundred = 43 AND thousand = 643 ORDER BY tenthous <-> 4000;
-                   QUERY PLAN                   
-------------------------------------------------
- Index Scan using tenk1_thous_tenthous on tenk1
-   Index Cond: (thousand = 643)
-   Order By: (tenthous <-> 4000)
-   Filter: (hundred = 43)
-(4 rows)
-
-EXPLAIN (COSTS OFF)
-SELECT ten, hundred, thousand, tenthous FROM tenk1
-WHERE ten = 3 AND hundred = 43 ORDER BY tenthous <-> 4000;
-                     QUERY PLAN                     
-----------------------------------------------------
+WHERE ten IN (3, 4, 5) AND hundred IN (23, 24, 35) AND thousand IN (843, 132, 623, 243)
+ORDER BY tenthous <-> 6000;
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
  Sort
-   Sort Key: ((tenthous <-> 4000))
+   Sort Key: ((tenthous <-> 6000))
    ->  Index Only Scan using tenk1_knn_idx on tenk1
-         Index Cond: ((ten = 3) AND (hundred = 43))
+         Index Cond: ((ten = ANY ('{3,4,5}'::integer[])) AND (hundred = ANY ('{23,24,35}'::integer[])) AND (thousand = ANY ('{843,132,623,243}'::integer[])))
 (4 rows)
+
+-- All array columns should be included into ORDER BY
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY tenthous <-> 6000;
+                            QUERY PLAN                             
+-------------------------------------------------------------------
+ Index Scan using tenk1_thous_tenthous on tenk1
+   Index Cond: ((thousand = 123) AND (tenthous > 2000))
+   Order By: (tenthous <-> 6000)
+   Filter: ((hundred = 23) AND (ten = ANY ('{3,4,5}'::integer[])))
+(4 rows)
+
+-- Eq-restricted columns can be omitted from ORDER BY
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, tenthous <-> 6000;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using tenk1_knn_idx on tenk1
+   Index Cond: ((ten = ANY ('{3,4,5}'::integer[])) AND (hundred = 23) AND (thousand = 123) AND (tenthous > 2000))
+   Order By: (ten AND (tenthous <-> 6000))
+(3 rows)
+
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, tenthous <-> 6000;
+ ten | hundred | thousand | tenthous 
+-----+---------+----------+----------
+   3 |      23 |      123 |     6123
+   3 |      23 |      123 |     5123
+   3 |      23 |      123 |     7123
+   3 |      23 |      123 |     4123
+   3 |      23 |      123 |     8123
+   3 |      23 |      123 |     3123
+   3 |      23 |      123 |     9123
+   3 |      23 |      123 |     2123
+(8 rows)
 
 EXPLAIN (COSTS OFF)
 SELECT ten, hundred, thousand, tenthous FROM tenk1
-WHERE ten = 3 AND thousand = 643 ORDER BY tenthous <-> 4000;
-                   QUERY PLAN                   
-------------------------------------------------
- Index Scan using tenk1_thous_tenthous on tenk1
-   Index Cond: (thousand = 643)
-   Order By: (tenthous <-> 4000)
-   Filter: (ten = 3)
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, hundred, tenthous <-> 6000;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using tenk1_knn_idx on tenk1
+   Index Cond: ((ten = ANY ('{3,4,5}'::integer[])) AND (hundred = 23) AND (thousand = 123) AND (tenthous > 2000))
+   Order By: (ten AND (tenthous <-> 6000))
+(3 rows)
+
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, hundred, tenthous <-> 6000;
+ ten | hundred | thousand | tenthous 
+-----+---------+----------+----------
+   3 |      23 |      123 |     6123
+   3 |      23 |      123 |     5123
+   3 |      23 |      123 |     7123
+   3 |      23 |      123 |     4123
+   3 |      23 |      123 |     8123
+   3 |      23 |      123 |     3123
+   3 |      23 |      123 |     9123
+   3 |      23 |      123 |     2123
+(8 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4 ,5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, thousand, tenthous <-> 6000;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using tenk1_knn_idx on tenk1
+   Index Cond: ((ten = ANY ('{3,4,5}'::integer[])) AND (hundred = 23) AND (thousand = 123) AND (tenthous > 2000))
+   Order By: (ten AND (tenthous <-> 6000))
+(3 rows)
+
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, thousand, tenthous <-> 6000;
+ ten | hundred | thousand | tenthous 
+-----+---------+----------+----------
+   3 |      23 |      123 |     6123
+   3 |      23 |      123 |     5123
+   3 |      23 |      123 |     7123
+   3 |      23 |      123 |     4123
+   3 |      23 |      123 |     8123
+   3 |      23 |      123 |     3123
+   3 |      23 |      123 |     9123
+   3 |      23 |      123 |     2123
+(8 rows)
+
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 AND thousand = 123 AND tenthous > 2000
+ORDER BY ten, hundred, thousand, tenthous <-> 6000;
+                                                    QUERY PLAN                                                    
+------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using tenk1_knn_idx on tenk1
+   Index Cond: ((ten = ANY ('{3,4,5}'::integer[])) AND (hundred = 23) AND (thousand = 123) AND (tenthous > 2000))
+   Order By: (ten AND (tenthous <-> 6000))
+(3 rows)
+
+-- Extra ORDER BY columns after order-by-op are not supported
+EXPLAIN (COSTS OFF)
+SELECT ten, hundred, thousand, tenthous FROM tenk1
+WHERE ten IN (3, 4, 5) AND hundred = 23 ORDER BY ten, thousand <-> 6000, tenthous;
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Sort
+   Sort Key: ten, ((thousand <-> 6000)), tenthous
+   ->  Index Only Scan using tenk1_knn_idx on tenk1
+         Index Cond: ((ten = ANY ('{3,4,5}'::integer[])) AND (hundred = 23))
 (4 rows)
 
 DROP INDEX tenk1_knn_idx;
