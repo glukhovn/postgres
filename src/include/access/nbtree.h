@@ -433,22 +433,8 @@ typedef struct BTArrayKeyInfo
 	Datum	   *elem_values;	/* array of num_elems Datums */
 } BTArrayKeyInfo;
 
-typedef struct BTScanOpaqueData
+typedef struct BTScanStateData
 {
-	/* these fields are set by _bt_preprocess_keys(): */
-	bool		qual_ok;		/* false if qual can never be satisfied */
-	int			numberOfKeys;	/* number of preprocessed scan keys */
-	ScanKey		keyData;		/* array of preprocessed scan keys */
-
-	/* workspace for SK_SEARCHARRAY support */
-	ScanKey		arrayKeyData;	/* modified copy of scan->keyData */
-	int			numArrayKeys;	/* number of equality-type array keys (-1 if
-								 * there are any unsatisfiable array keys) */
-	int			arrayKeyCount;	/* count indicating number of array scan keys
-								 * processed */
-	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
-	MemoryContext arrayContext; /* scan-lifespan context for array data */
-
 	/* info about killed items if any (killedItems is NULL if never used) */
 	int		   *killedItems;	/* currPos.items indexes of killed items */
 	int			numKilled;		/* number of currently stored items */
@@ -473,6 +459,27 @@ typedef struct BTScanOpaqueData
 	/* keep these last in struct for efficiency */
 	BTScanPosData currPos;		/* current position data */
 	BTScanPosData markPos;		/* marked position, if any */
+} BTScanStateData;
+
+typedef BTScanStateData *BTScanState;
+
+typedef struct BTScanOpaqueData
+{
+	/* these fields are set by _bt_preprocess_keys(): */
+	bool		qual_ok;		/* false if qual can never be satisfied */
+	int			numberOfKeys;	/* number of preprocessed scan keys */
+	ScanKey		keyData;		/* array of preprocessed scan keys */
+
+	/* workspace for SK_SEARCHARRAY support */
+	ScanKey		arrayKeyData;	/* modified copy of scan->keyData */
+	int			numArrayKeys;	/* number of equality-type array keys (-1 if
+								 * there are any unsatisfiable array keys) */
+	int			arrayKeyCount;	/* count indicating number of array scan keys
+								 * processed */
+	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
+	MemoryContext arrayContext; /* scan-lifespan context for array data */
+
+	BTScanStateData	state;
 } BTScanOpaqueData;
 
 typedef BTScanOpaqueData *BTScanOpaque;
@@ -589,7 +596,7 @@ extern void _bt_preprocess_keys(IndexScanDesc scan);
 extern IndexTuple _bt_checkkeys(IndexScanDesc scan,
 			  Page page, OffsetNumber offnum,
 			  ScanDirection dir, bool *continuescan);
-extern void _bt_killitems(IndexScanDesc scan);
+extern void _bt_killitems(BTScanState state, Relation indexRelation);
 extern BTCycleId _bt_vacuum_cycleid(Relation rel);
 extern BTCycleId _bt_start_vacuum(Relation rel);
 extern void _bt_end_vacuum(Relation rel);
@@ -602,6 +609,7 @@ extern bool btproperty(Oid index_oid, int attno,
 		   bool *res, bool *isnull);
 extern IndexTuple _bt_nonkey_truncate(Relation rel, IndexTuple itup);
 extern bool _bt_check_natts(Relation rel, Page page, OffsetNumber offnum);
+extern void _bt_allocate_tuple_workspaces(BTScanState state);
 
 /*
  * prototypes for functions in nbtvalidate.c
