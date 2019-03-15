@@ -1510,7 +1510,9 @@ _copySubscriptingRef(const SubscriptingRef *from)
 	COPY_SCALAR_FIELD(refcollid);
 	COPY_SCALAR_FIELD(refnestedfunc);
 	COPY_NODE_FIELD(refupperindexpr);
+	COPY_NODE_FIELD(refupperaddexpr);
 	COPY_NODE_FIELD(reflowerindexpr);
+	COPY_NODE_FIELD(refloweraddexpr);
 	COPY_NODE_FIELD(refexpr);
 	COPY_NODE_FIELD(refassgnexpr);
 

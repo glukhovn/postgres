@@ -1194,7 +1194,13 @@ select ('{"a": 1}'::jsonb)[NULL];
 select ('[1, "2", null]'::jsonb)['a'];
 select ('[1, "2", null]'::jsonb)[0];
 select ('[1, "2", null]'::jsonb)['1'];
+select ('[1, "2", null]'::jsonb)['1.0'];
 select ('[1, "2", null]'::jsonb)[1.0];
+select ('[1, "2", null]'::jsonb)[1.4];
+select ('[1, "2", null]'::jsonb)[1.5];
+select ('[1, "2", null]'::jsonb)[1.6];
+select ('[1, "2", null]'::jsonb)[0.6];
+select ('[1, "2", null]'::jsonb)['0.3'::numeric];
 select ('[1, "2", null]'::jsonb)[2];
 select ('[1, "2", null]'::jsonb)[3];
 select ('[1, "2", null]'::jsonb)[-2];
@@ -1209,6 +1215,15 @@ select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb)['a']['a1'
 select ('{"a": {"a1": {"a2": "aaa"}}, "b": "bbb", "c": "ccc"}'::jsonb)['a']['a1']['a2']['a3'];
 select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb)['a'][1]['b1'];
 select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb)['a'][1]['b1'][2];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1.0];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1.1];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1.2];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1'];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1.0'];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1.1'];
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1.2'];
+
 
 create TEMP TABLE test_jsonb_subscript (
        id int,
@@ -1237,6 +1252,21 @@ select * from test_jsonb_subscript;
 
 -- replace by array
 update test_jsonb_subscript set test_json['a'] = '[1, 2, 3]'::jsonb;
+select * from test_jsonb_subscript;
+
+-- append element to array
+update test_jsonb_subscript set test_json['a'][2.9] = '"4"'::jsonb;
+select * from test_jsonb_subscript;
+
+-- replace element in string subscript
+update test_jsonb_subscript set test_json['a']['3'] = '4'::jsonb;
+select * from test_jsonb_subscript;
+
+-- bad array subscripts
+update test_jsonb_subscript set test_json['a']['a'] = '5'::jsonb;
+select * from test_jsonb_subscript;
+
+update test_jsonb_subscript set test_json['a'][0][1] = '5'::jsonb;
 select * from test_jsonb_subscript;
 
 -- use jsonb subscription in where clause

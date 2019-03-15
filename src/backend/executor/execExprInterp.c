@@ -411,6 +411,8 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		&&CASE_EEOP_FIELDSELECT,
 		&&CASE_EEOP_FIELDSTORE_DEFORM,
 		&&CASE_EEOP_FIELDSTORE_FORM,
+		&&CASE_EEOP_SBSREF_INIT,
+		&&CASE_EEOP_SBSREF_SELECTEXPR,
 		&&CASE_EEOP_SBSREF_SUBSCRIPT,
 		&&CASE_EEOP_SBSREF_OLD,
 		&&CASE_EEOP_SBSREF_ASSIGN,
@@ -1386,6 +1388,24 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 			ExecEvalFieldStoreForm(state, op, econtext);
 
 			EEO_NEXT();
+		}
+
+		EEO_CASE(EEOP_SBSREF_INIT)
+		{
+			ExecEvalSubscriptingRefInit(state, op);
+
+			EEO_NEXT();
+		}
+
+		EEO_CASE(EEOP_SBSREF_SELECTEXPR)
+		{
+			/* Select expression for array subscript evaluation */
+			int			selectedExpr = ExecEvalSubscriptingRefSelect(state, op);
+
+			if (selectedExpr > 0)
+				EEO_JUMP(op->d.sbsref_selectexpr.jumpdones[selectedExpr - 1]);
+			else
+				EEO_NEXT();
 		}
 
 		EEO_CASE(EEOP_SBSREF_SUBSCRIPT)
@@ -3145,6 +3165,40 @@ ExecEvalFieldStoreForm(ExprState *state, ExprEvalStep *op, ExprContext *econtext
 	*op->resnull = false;
 }
 
+void
+ExecEvalSubscriptingRefInit(ExprState *state, ExprEvalStep *op)
+{
+	SubscriptingRefState *sbsrefstate = op->d.sbsref_selectexpr.state;
+	SubscriptRoutines	 *sbsroutines = sbsrefstate->sbsroutines;
+
+	/* init private subsription state */
+	sbsroutines->init(sbsrefstate, *op->resvalue, *op->resnull);
+}
+
+int
+ExecEvalSubscriptingRefSelect(ExprState *state, ExprEvalStep *op)
+{
+	SubscriptingRefState *sbsrefstate = op->d.sbsref_selectexpr.state;
+	SubscriptRoutines	 *sbsroutines = sbsrefstate->sbsroutines;
+	Oid		   *typids = op->d.sbsref_selectexpr.isupper ?
+		sbsrefstate->uppertypid : sbsrefstate->uppertypid;
+	int			off = op->d.sbsref_selectexpr.off;
+	Oid		   *exprtypes = op->d.sbsref_selectexpr.exprtypes;
+	Oid			typid = typids[off];
+	int			selected;
+
+	selected = sbsroutines->selectexpr(sbsrefstate, typid, exprtypes,
+									   op->d.sbsref_selectexpr.nexprs);
+
+	if (selected)
+	{
+		Assert(OidIsValid(exprtypes[selected]));
+		typids[off] = exprtypes[selected - 1];
+	}
+
+	return selected;
+}
+
 /*
  * Process a subscript in a SubscriptingRef expression.
  *
@@ -3160,8 +3214,10 @@ bool
 ExecEvalSubscriptingRef(ExprState *state, ExprEvalStep *op)
 {
 	SubscriptingRefState *sbsrefstate = op->d.sbsref_subscript.state;
-	Datum				 *indexes;
-	int					 off;
+	SubscriptRoutines *sbsroutines = sbsrefstate->sbsroutines;
+	Datum	   *indexes;
+	int			off;
+	bool		isupper;
 
 	/* If any index expr yields NULL, result is NULL or error */
 	if (sbsrefstate->subscriptnull)
@@ -3174,14 +3230,23 @@ ExecEvalSubscriptingRef(ExprState *state, ExprEvalStep *op)
 		return false;
 	}
 
-	/* Convert datum to int, save in appropriate place */
-	if (op->d.sbsref_subscript.isupper)
+	off = op->d.sbsref_subscript.off;
+	isupper = op->d.sbsref_subscript.isupper;
+
+	/* Save converted datum in appropriate place */
+	if (isupper)
 		indexes = sbsrefstate->upperindex;
 	else
 		indexes = sbsrefstate->lowerindex;
-	off = op->d.sbsref_subscript.off;
 
 	indexes[off] = sbsrefstate->subscriptvalue;
+
+	if (sbsroutines->step &&
+		!sbsroutines->step(sbsrefstate, off, isupper))
+	{
+		*op->resnull = true;
+		return false;
+	}
 
 	return true;
 }
@@ -3199,7 +3264,6 @@ ExecEvalSubscriptingRefFetch(ExprState *state, ExprEvalStep *op)
 
 	/* Should not get here if source container (or any subscript) is null */
 	Assert(!(*op->resnull));
-
 
 	*op->resvalue = sbsroutines->fetch(*op->resvalue, sbsrefstate);
 	*op->resnull = sbsrefstate->resnull;

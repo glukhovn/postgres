@@ -4701,10 +4701,46 @@ select ('[1, "2", null]'::jsonb)['1'];
  "2"
 (1 row)
 
-select ('[1, "2", null]'::jsonb)[1.0];
+select ('[1, "2", null]'::jsonb)['1.0'];
  jsonb 
 -------
  
+(1 row)
+
+select ('[1, "2", null]'::jsonb)[1.0];
+ jsonb 
+-------
+ "2"
+(1 row)
+
+select ('[1, "2", null]'::jsonb)[1.4];
+ jsonb 
+-------
+ "2"
+(1 row)
+
+select ('[1, "2", null]'::jsonb)[1.5];
+ jsonb 
+-------
+ null
+(1 row)
+
+select ('[1, "2", null]'::jsonb)[1.6];
+ jsonb 
+-------
+ null
+(1 row)
+
+select ('[1, "2", null]'::jsonb)[0.6];
+ jsonb 
+-------
+ "2"
+(1 row)
+
+select ('[1, "2", null]'::jsonb)['0.3'::numeric];
+ jsonb 
+-------
+ 1
 (1 row)
 
 select ('[1, "2", null]'::jsonb)[2];
@@ -4791,6 +4827,54 @@ select ('{"a": ["a1", {"b1": ["aaa", "bbb", "ccc"]}], "b": "bb"}'::jsonb)['a'][1
  "ccc"
 (1 row)
 
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1];
+ jsonb 
+-------
+ "a"
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1.0];
+ jsonb 
+-------
+ "b"
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1.1];
+ jsonb 
+-------
+ 
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)[1.2];
+ jsonb 
+-------
+ "c"
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1'];
+ jsonb 
+-------
+ "a"
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1.0'];
+ jsonb 
+-------
+ "b"
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1.1'];
+ jsonb 
+-------
+ 
+(1 row)
+
+select ('{"1": "a", "1.0": "b", "1.2": "c"}'::jsonb)['1.2'];
+ jsonb 
+-------
+ "c"
+(1 row)
+
 create TEMP TABLE test_jsonb_subscript (
        id int,
        test_json jsonb
@@ -4843,11 +4927,47 @@ select * from test_jsonb_subscript;
   2 | {"a": [1, 2, 3], "key": "value"}
 (2 rows)
 
+-- append element to array
+update test_jsonb_subscript set test_json['a'][2.9] = '"4"'::jsonb;
+select * from test_jsonb_subscript;
+ id |               test_json               
+----+---------------------------------------
+  1 | {"a": [1, 2, 3, "4"]}
+  2 | {"a": [1, 2, 3, "4"], "key": "value"}
+(2 rows)
+
+-- replace element in string subscript
+update test_jsonb_subscript set test_json['a']['3'] = '4'::jsonb;
+select * from test_jsonb_subscript;
+ id |              test_json              
+----+-------------------------------------
+  1 | {"a": [1, 2, 3, 4]}
+  2 | {"a": [1, 2, 3, 4], "key": "value"}
+(2 rows)
+
+-- bad array subscripts
+update test_jsonb_subscript set test_json['a']['a'] = '5'::jsonb;
+ERROR:  jsonb subscript at position 1 is not an integer: "a"
+select * from test_jsonb_subscript;
+ id |              test_json              
+----+-------------------------------------
+  1 | {"a": [1, 2, 3, 4]}
+  2 | {"a": [1, 2, 3, 4], "key": "value"}
+(2 rows)
+
+update test_jsonb_subscript set test_json['a'][0][1] = '5'::jsonb;
+select * from test_jsonb_subscript;
+ id |              test_json              
+----+-------------------------------------
+  1 | {"a": [1, 2, 3, 4]}
+  2 | {"a": [1, 2, 3, 4], "key": "value"}
+(2 rows)
+
 -- use jsonb subscription in where clause
 select * from test_jsonb_subscript where test_json['key'] = '"value"';
- id |            test_json             
-----+----------------------------------
-  2 | {"a": [1, 2, 3], "key": "value"}
+ id |              test_json              
+----+-------------------------------------
+  2 | {"a": [1, 2, 3, 4], "key": "value"}
 (1 row)
 
 select * from test_jsonb_subscript where test_json['key_doesnt_exists'] = '"value"';
@@ -4865,10 +4985,10 @@ update test_jsonb_subscript set test_json[NULL] = 1;
 ERROR:  subscript in assignment must not be null
 update test_jsonb_subscript set test_json['another_key'] = NULL;
 select * from test_jsonb_subscript;
- id |                       test_json                       
-----+-------------------------------------------------------
-  1 | {"a": [1, 2, 3], "another_key": null}
-  2 | {"a": [1, 2, 3], "key": "value", "another_key": null}
+ id |                        test_json                         
+----+----------------------------------------------------------
+  1 | {"a": [1, 2, 3, 4], "another_key": null}
+  2 | {"a": [1, 2, 3, 4], "key": "value", "another_key": null}
 (2 rows)
 
 -- jsonb to tsvector

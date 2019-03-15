@@ -1924,7 +1924,13 @@ expression_tree_walker(Node *node,
 				if (expression_tree_walker((Node *) sbsref->refupperindexpr,
 										   walker, context))
 					return true;
+				if (expression_tree_walker((Node *) sbsref->refupperaddexpr,
+										   walker, context))
+					return true;
 				if (expression_tree_walker((Node *) sbsref->reflowerindexpr,
+										   walker, context))
+					return true;
+				if (expression_tree_walker((Node *) sbsref->refloweraddexpr,
 										   walker, context))
 					return true;
 				/* walker must see the refexpr and refassgnexpr, however */
@@ -2574,7 +2580,11 @@ expression_tree_mutator(Node *node,
 				FLATCOPY(newnode, sbsref, SubscriptingRef);
 				MUTATE(newnode->refupperindexpr, sbsref->refupperindexpr,
 					   List *);
+				MUTATE(newnode->refupperaddexpr, sbsref->refupperaddexpr,
+					   List *);
 				MUTATE(newnode->reflowerindexpr, sbsref->reflowerindexpr,
+					   List *);
+				MUTATE(newnode->refloweraddexpr, sbsref->refloweraddexpr,
 					   List *);
 				MUTATE(newnode->refexpr, sbsref->refexpr,
 					   Expr *);
