@@ -2576,6 +2576,7 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 		}
 
 		sbsrefstate->upperprovided[i] = true;
+		sbsrefstate->uppertypid[i] = exprType((Node *) e);
 
 		/* Each subscript is evaluated into subscriptvalue/subscriptnull */
 		ExecInitExprRec(e, state,
@@ -2609,6 +2610,7 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 		}
 
 		sbsrefstate->lowerprovided[i] = true;
+		sbsrefstate->lowertypid[i] = exprType((Node *) e);
 
 		/* Each subscript is evaluated into subscriptvalue/subscriptnull */
 		ExecInitExprRec(e, state,
