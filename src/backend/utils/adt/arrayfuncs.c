@@ -6729,7 +6729,7 @@ Datum
 array_subscript_handler(PG_FUNCTION_ARGS)
 {
 	SubscriptRoutines *sbsroutines = (SubscriptRoutines *)
-									 palloc(sizeof(SubscriptRoutines));
+									 palloc0(sizeof(SubscriptRoutines));
 
 	sbsroutines->prepare = array_subscript_prepare;
 	sbsroutines->validate = array_subscript_validate;

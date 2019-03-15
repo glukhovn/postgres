@@ -467,19 +467,22 @@ static JsonbValue *findJsonbValueFromContainerLen(JsonbContainer *container,
 /* functions supporting jsonb_delete, jsonb_set and jsonb_concat */
 static JsonbValue *IteratorConcat(JsonbIterator **it1, JsonbIterator **it2,
 			   JsonbParseState **state);
-static Datum jsonb_set_element(Datum datum, Datum *path, int path_len,
-							   Datum sourceData, Oid source_type, bool is_null);
-static Datum jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
-							   bool *isnull, bool as_text);
+static Datum jsonb_set_element(Datum datum, Datum *path, Oid *path_types,
+							   int path_len, Datum sourceData, Oid source_type,
+							   bool is_null);
+static Datum jsonb_get_element(Jsonb *jb, Datum *path, Oid *path_types,
+							   int path_len, bool *isnull, bool as_text);
 static JsonbValue *setPath(JsonbIterator **it, Datum *path_elems,
-		bool *path_nulls, int path_len,
+		bool *path_nulls, Oid *path_types, int path_len,
 		JsonbParseState **st, int level, JsonbValue *newval, int op_type);
 static void setPathObject(JsonbIterator **it, Datum *path_elems,
-			  bool *path_nulls, int path_len, JsonbParseState **st,
-			  int level, JsonbValue *newval, uint32 npairs, int op_type);
+			  bool *path_nulls, Oid *path_types, int path_len,
+			  JsonbParseState **st, int level, JsonbValue *newval,
+			  uint32 npairs, int op_type);
 static void setPathArray(JsonbIterator **it, Datum *path_elems,
-			 bool *path_nulls, int path_len, JsonbParseState **st,
-			 int level, JsonbValue *newval, uint32 nelems, int op_type);
+			 bool *path_nulls, Oid *path_types, int path_len,
+			 JsonbParseState **st, int level, JsonbValue *newval,
+			 uint32 nelems, int op_type);
 
 /* function supporting iterate_json_values */
 static void iterate_values_scalar(void *state, char *token, JsonTokenType tokentype);
@@ -942,6 +945,26 @@ json_extract_path_text(PG_FUNCTION_ARGS)
 	return get_path_all(fcinfo, true);
 }
 
+static inline bool
+jsonb_get_array_index_from_cstring(char *indexstr, long *index)
+{
+	char	   *endptr;
+
+	errno = 0;
+	*index = strtol(indexstr, &endptr, 10);
+	if (endptr == indexstr || *endptr != '\0' || errno != 0 ||
+		*index > INT_MAX || *index < INT_MIN)
+		return false;
+
+	return true;
+}
+
+static inline bool
+jsonb_get_array_index_from_text(Datum indextext, long *index)
+{
+	return jsonb_get_array_index_from_cstring(TextDatumGetCString(indextext), index);
+}
+
 /*
  * common routine for extract_path functions
  */
@@ -987,11 +1010,8 @@ get_path_all(FunctionCallInfo fcinfo, bool as_text)
 		if (*tpath[i] != '\0')
 		{
 			long		ind;
-			char	   *endptr;
 
-			errno = 0;
-			ind = strtol(tpath[i], &endptr, 10);
-			if (*endptr == '\0' && errno == 0 && ind <= INT_MAX && ind >= INT_MIN)
+			if (jsonb_get_array_index_from_cstring(tpath[i], &ind))
 				ipath[i] = (int) ind;
 			else
 				ipath[i] = INT_MIN;
@@ -1430,13 +1450,169 @@ get_jsonb_path_all(FunctionCallInfo fcinfo, bool as_text)
 		PG_RETURN_DATUM(res);
 }
 
+static void
+jsonb_subscript_init(SubscriptingRefState *sbstate, Datum container, bool isnull)
+{
+	Jsonb	   *jb;
+	JsonbValue *jbv;
+
+	if (isnull)
+	{
+		sbstate->privatedata = NULL;
+		return;
+	}
+
+	jb = DatumGetJsonbP(container);
+	jbv = palloc(sizeof(*jbv));
+	
+	jbv->type = jbvBinary;
+	jbv->val.binary.data = &jb->root;
+	jbv->val.binary.len = VARSIZE(jb) - VARHDRSZ;
+
+	sbstate->privatedata = jbv;
+}
+
+static int
+jsonb_subscript_selectexpr(SubscriptingRefState *sbstate, Oid subscriptType,
+						   Oid *exprTypes, int nExprs)
+{
+	JsonbValue *jbv = sbstate->privatedata;
+	JsonbContainer *jbc;
+
+	Assert(nExprs == 1);
+	Assert(!OidIsValid(exprTypes[0]) || exprTypes[0] == INT4OID);
+
+	if (!jbv)
+	{
+		Assert(sbstate->isassignment);
+		return OidIsValid(exprTypes[0]) ? 1 : 0;
+	}
+
+	if (jbv->type != jbvBinary)
+		return 0;
+
+	jbc = jbv->val.binary.data;
+
+	if (JsonContainerIsObject(jbc))
+		return 0;
+	else if (JsonContainerIsArray(jbc) && !JsonContainerIsScalar(jbc))
+		return OidIsValid(exprTypes[0]) ? 1 : 0;
+	else
+		return 0;
+}
+
+static inline JsonbValue *
+jsonb_subscript_value(JsonbValue *jbv, Datum subscriptVal, Oid subscriptTypid,
+					  int subscriptIdx, bool isassignment)
+{
+	JsonbContainer *jbc;
+
+	if (jbv->type != jbvBinary)
+		return NULL;	/* scalar, extraction yields a null */
+
+	jbc = jbv->val.binary.data;
+
+	if (JsonContainerIsObject(jbc))
+	{
+		Assert(subscriptTypid == TEXTOID);
+
+		return findJsonbValueFromContainerLen(jbc,
+											  JB_FOBJECT,
+											  VARDATA(subscriptVal),
+											  VARSIZE(subscriptVal) - VARHDRSZ);
+	}
+	else if (JsonContainerIsArray(jbc) && !JsonContainerIsScalar(jbc))
+	{
+		long		lindex;
+		uint32		index;
+
+		if (subscriptTypid == TEXTOID)
+		{
+			if (!jsonb_get_array_index_from_text(subscriptVal, &lindex))
+			{
+				if (isassignment)
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+							 errmsg("jsonb subscript at position %d "
+									"is not an integer: \"%s\"",
+									subscriptIdx,
+									TextDatumGetCString(subscriptVal))));
+				return NULL;
+			}
+		}
+		else
+		{
+			Assert(subscriptTypid == INT4OID);
+			lindex = DatumGetInt32(subscriptVal);
+		}
+
+		if (lindex >= 0)
+		{
+			index = (uint32) lindex;
+		}
+		else
+		{
+			/* Handle negative subscript */
+			uint32		nelements;
+
+			nelements = JsonContainerSize(jbc);
+
+			if (-lindex > nelements)
+				return NULL;
+
+			index = nelements + lindex;
+		}
+
+		return getIthJsonbValueFromContainer(jbc, index);
+	}
+	else
+	{
+		/* scalar, extraction yields a null */
+		return NULL;
+	}
+}
+
+static bool
+jsonb_subscript_step(SubscriptingRefState *sbstate, int subscriptIdx, bool isupper)
+{
+	JsonbValue *jbv = sbstate->privatedata;
+	Datum		subscriptVal;
+	Datum		subscriptTypid;
+
+	Assert(isupper);
+
+	if (!jbv)
+	{
+		Assert(sbstate->isassignment);
+		return sbstate->isassignment;
+	}
+
+	if (isupper)
+	{
+		subscriptVal = sbstate->upperindex[subscriptIdx];
+		subscriptTypid = sbstate->uppertypid[subscriptIdx];
+	}
+	else
+	{
+		subscriptVal = sbstate->lowerindex[subscriptIdx];
+		subscriptTypid = sbstate->lowertypid[subscriptIdx];
+	}
+
+	jbv = jsonb_subscript_value(jbv, subscriptVal, subscriptTypid, subscriptIdx,
+								sbstate->isassignment);
+
+	sbstate->privatedata = jbv;
+
+	return sbstate->isassignment || jbv;
+}
+
 static Datum
-jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
+jsonb_get_element(Jsonb *jb, Datum *path, Oid *path_types, int npath,
 				  bool *isnull, bool as_text)
 {
 	Jsonb		   *res;
-	JsonbContainer *container = &jb->root;
 	JsonbValue	   *jbvp = NULL;
+	JsonbContainer *container = &jb->root;
 	JsonbValue		tv;
 	int				i;
 	bool			have_object = false,
@@ -1445,13 +1621,13 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 	*isnull = false;
 
 	/* Identify whether we have object, array, or scalar at top-level */
-	if (JB_ROOT_IS_OBJECT(jb))
+	if (JsonContainerIsObject(container))
 		have_object = true;
-	else if (JB_ROOT_IS_ARRAY(jb) && !JB_ROOT_IS_SCALAR(jb))
+	else if (JsonContainerIsArray(container) && !JsonContainerIsScalar(container))
 		have_array = true;
 	else
 	{
-		Assert(JB_ROOT_IS_ARRAY(jb) && JB_ROOT_IS_SCALAR(jb));
+		Assert(JsonContainerIsArray(container) && JsonContainerIsScalar(container));
 		/* Extract the scalar value, if it is what we'll return */
 		if (npath <= 0)
 			jbvp = getIthJsonbValueFromContainer(container, 0);
@@ -1487,7 +1663,7 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 			char	   *key;
 			int			keylen;
 
-			if (!pathtypids || pathtypids[i] == TEXTOID)
+			if (!path_types || path_types[i] == TEXTOID)
 			{
 				key = VARDATA(path[i]);
 				keylen = VARSIZE(path[i]) - VARHDRSZ;
@@ -1497,7 +1673,7 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 				Oid			typoutput;
 				bool		typisvarlena;
 
-				getTypeOutputInfo(pathtypids[i], &typoutput, &typisvarlena);
+				getTypeOutputInfo(path_types[i], &typoutput, &typisvarlena);
 
 				key = OidOutputFunctionCall(typoutput, path[i]);
 				keylen = strlen(key);
@@ -1513,15 +1689,9 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 			long		lindex;
 			uint32		index;
 
-			if (!pathtypids || pathtypids[i] == TEXTOID)
+			if (!path_types || path_types[i] == TEXTOID)
 			{
-				char	   *indextext = TextDatumGetCString(path[i]);
-				char	   *endptr;
-
-				errno = 0;
-				lindex = strtol(indextext, &endptr, 10);
-				if (endptr == indextext || *endptr != '\0' || errno != 0 ||
-					lindex > INT_MAX || lindex < INT_MIN)
+				if (!jsonb_get_array_index_from_text(path[i], &lindex))
 				{
 					*isnull = true;
 					return PointerGetDatum(NULL);
@@ -1529,7 +1699,7 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 			}
 			else
 			{
-				switch (pathtypids[i])
+				switch (path_types[i])
 				{
 					case INT2OID:
 						lindex = DatumGetInt16(path[i]);
@@ -1551,7 +1721,7 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 						break;
 					default:
 						elog(ERROR, "unsupported jsonb subscript type oid: %d",
-							 pathtypids[i]);
+							 path_types[i]);
 						lindex = 0;
 						break;
 				}
@@ -1600,13 +1770,10 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 
 		if (jbvp->type == jbvBinary)
 		{
-			JsonbIterator *it = JsonbIteratorInit((JsonbContainer *) jbvp->val.binary.data);
-			JsonbIteratorToken r;
-
-			r = JsonbIteratorNext(&it, &tv, true);
-			container = (JsonbContainer *) jbvp->val.binary.data;
-			have_object = r == WJB_BEGIN_OBJECT;
-			have_array = r == WJB_BEGIN_ARRAY;
+			container = jbvp->val.binary.data;
+			have_object = JsonContainerIsObject(container);
+			have_array = JsonContainerIsArray(container) &&
+				!JsonContainerIsScalar(container);
 		}
 		else
 		{
@@ -1645,7 +1812,7 @@ jsonb_get_element(Jsonb *jb, Datum *path, Oid *pathtypids, int npath,
 }
 
 Datum
-jsonb_set_element(Datum jsonbdatum, Datum *path, int path_len,
+jsonb_set_element(Datum jsonbdatum, Datum *path, Oid *path_types, int path_len,
 				  Datum sourceData, Oid source_type, bool is_null)
 {
 	Jsonb			   *jb = DatumGetJsonbP(jsonbdatum);
@@ -1662,7 +1829,7 @@ jsonb_set_element(Datum jsonbdatum, Datum *path, int path_len,
 
 	it = JsonbIteratorInit(&jb->root);
 
-	res = setPath(&it, path, path_nulls, path_len, &state, 0,
+	res = setPath(&it, path, path_nulls, path_types, path_len, &state, 0,
 				  newval, JB_PATH_CREATE);
 
 	pfree(path_nulls);
@@ -4531,7 +4698,7 @@ jsonb_set(PG_FUNCTION_ARGS)
 
 	it = JsonbIteratorInit(&in->root);
 
-	res = setPath(&it, path_elems, path_nulls, path_len, &st,
+	res = setPath(&it, path_elems, path_nulls, NULL, path_len, &st,
 				  0, newval, create ? JB_PATH_CREATE : JB_PATH_REPLACE);
 
 	Assert(res != NULL);
@@ -4576,7 +4743,7 @@ jsonb_delete_path(PG_FUNCTION_ARGS)
 
 	it = JsonbIteratorInit(&in->root);
 
-	res = setPath(&it, path_elems, path_nulls, path_len, &st,
+	res = setPath(&it, path_elems, path_nulls, NULL, path_len, &st,
 				  0, NULL, JB_PATH_DELETE);
 
 	Assert(res != NULL);
@@ -4621,7 +4788,7 @@ jsonb_insert(PG_FUNCTION_ARGS)
 
 	it = JsonbIteratorInit(&in->root);
 
-	res = setPath(&it, path_elems, path_nulls, path_len, &st, 0, newval,
+	res = setPath(&it, path_elems, path_nulls, NULL, path_len, &st, 0, newval,
 				  after ? JB_PATH_INSERT_AFTER : JB_PATH_INSERT_BEFORE);
 
 	Assert(res != NULL);
@@ -4755,8 +4922,8 @@ IteratorConcat(JsonbIterator **it1, JsonbIterator **it2,
  * whatever bits in op_type are set, or nothing is done.
  */
 static JsonbValue *
-setPath(JsonbIterator **it, Datum *path_elems,
-		bool *path_nulls, int path_len,
+setPath(JsonbIterator **it, Datum *path_elems,  bool *path_nulls,
+		Oid *path_types, int path_len,
 		JsonbParseState **st, int level, JsonbValue *newval, int op_type)
 {
 	JsonbValue	v;
@@ -4777,16 +4944,16 @@ setPath(JsonbIterator **it, Datum *path_elems,
 	{
 		case WJB_BEGIN_ARRAY:
 			(void) pushJsonbValue(st, r, NULL);
-			setPathArray(it, path_elems, path_nulls, path_len, st, level,
-						 newval, v.val.array.nElems, op_type);
+			setPathArray(it, path_elems, path_nulls, path_types, path_len,
+						 st, level, newval, v.val.array.nElems, op_type);
 			r = JsonbIteratorNext(it, &v, false);
 			Assert(r == WJB_END_ARRAY);
 			res = pushJsonbValue(st, r, NULL);
 			break;
 		case WJB_BEGIN_OBJECT:
 			(void) pushJsonbValue(st, r, NULL);
-			setPathObject(it, path_elems, path_nulls, path_len, st, level,
-						  newval, v.val.object.nPairs, op_type);
+			setPathObject(it, path_elems, path_nulls, path_types, path_len,
+						  st, level, newval, v.val.object.nPairs, op_type);
 			r = JsonbIteratorNext(it, &v, true);
 			Assert(r == WJB_END_OBJECT);
 			res = pushJsonbValue(st, r, NULL);
@@ -4809,7 +4976,7 @@ setPath(JsonbIterator **it, Datum *path_elems,
  */
 static void
 setPathObject(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
-			  int path_len, JsonbParseState **st, int level,
+			  Oid *path_types, int path_len, JsonbParseState **st, int level,
 			  JsonbValue *newval, uint32 npairs, int op_type)
 {
 	int			i;
@@ -4869,7 +5036,7 @@ setPathObject(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 			else
 			{
 				(void) pushJsonbValue(st, r, &k);
-				setPath(it, path_elems, path_nulls, path_len,
+				setPath(it, path_elems, path_nulls, path_types, path_len,
 						st, level + 1, newval, op_type);
 			}
 		}
@@ -4916,7 +5083,7 @@ setPathObject(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
  */
 static void
 setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
-			 int path_len, JsonbParseState **st, int level,
+			 Oid *path_types, int path_len, JsonbParseState **st, int level,
 			 JsonbValue *newval, uint32 nelems, int op_type)
 {
 	JsonbValue	v;
@@ -4927,19 +5094,24 @@ setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 	/* pick correct index */
 	if (level < path_len && !path_nulls[level])
 	{
-		char	   *c = TextDatumGetCString(path_elems[level]);
-		long		lindex;
-		char	   *badp;
+		if (path_types && path_types[level] == INT4OID)
+		{
+			idx = DatumGetInt32(path_elems[level]);
+		}
+		else
+		{
+			long		lindex;
 
-		errno = 0;
-		lindex = strtol(c, &badp, 10);
-		if (errno != 0 || badp == c || *badp != '\0' || lindex > INT_MAX ||
-			lindex < INT_MIN)
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
-					 errmsg("path element at position %d is not an integer: \"%s\"",
-							level + 1, c)));
-		idx = lindex;
+			Assert(!path_types || path_types[level] == TEXTOID);
+
+			if (!jsonb_get_array_index_from_text(path_elems[level], &lindex))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_TEXT_REPRESENTATION),
+						 errmsg("path element at position %d is not an integer: \"%s\"",
+								level + 1, TextDatumGetCString(path_elems[level]))));
+
+			idx = lindex;
+		}
 	}
 	else
 		idx = nelems;
@@ -4997,7 +5169,7 @@ setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 				done = true;
 			}
 			else
-				(void) setPath(it, path_elems, path_nulls, path_len,
+				(void) setPath(it, path_elems, path_nulls, path_types, path_len,
 							   st, level + 1, newval, op_type);
 		}
 		else
@@ -5040,12 +5212,17 @@ setPathArray(JsonbIterator **it, Datum *path_elems, bool *path_nulls,
 Datum
 jsonb_subscript_fetch(Datum containerSource, SubscriptingRefState *sbstate)
 {
+	JsonbValue *jbv = sbstate->privatedata;
+
+	return JsonbPGetDatum(JsonbValueToJsonb(jbv));
+/*
 	return jsonb_get_element(DatumGetJsonbP(containerSource),
 							 sbstate->upperindex,
 							 sbstate->uppertypid,
 							 sbstate->numupper,
 							 &sbstate->resnull,
 							 false);
+*/
 }
 
 
@@ -5067,6 +5244,7 @@ jsonb_subscript_assign(Datum containerSource, SubscriptingRefState *sbstate)
 
 	return jsonb_set_element(containerSource,
 							 sbstate->upperindex,
+							 sbstate->uppertypid,
 							 sbstate->numupper,
 							 sbstate->replacevalue,
 							 sbstate->refelemtype,
@@ -5095,6 +5273,9 @@ jsonb_subscript_handler(PG_FUNCTION_ARGS)
 	sbsroutines->validate = jsonb_subscript_validate;
 	sbsroutines->fetch = jsonb_subscript_fetch;
 	sbsroutines->assign = jsonb_subscript_assign;
+	sbsroutines->init = jsonb_subscript_init;
+	sbsroutines->step = jsonb_subscript_step;
+	sbsroutines->selectexpr = jsonb_subscript_selectexpr;
 
 	PG_RETURN_POINTER(sbsroutines);
 }
@@ -5117,8 +5298,9 @@ SubscriptingRef *
 jsonb_subscript_validate(bool isAssignment, SubscriptingRef *sbsref,
 						 ParseState *pstate)
 {
-	List			   *upperIndexpr = NIL;
-	ListCell		   *l;
+	List	   *upperIndexpr = NIL;
+	List	   *upperAddExpr = NIL;
+	ListCell   *l;
 
 	if (sbsref->reflowerindexpr != NIL)
 		ereport(ERROR,
@@ -5133,6 +5315,7 @@ jsonb_subscript_validate(bool isAssignment, SubscriptingRef *sbsref,
 		Oid			subexprType;
 		char		typcategory;
 		bool		typispreferred;
+		List	   *addexprs = NIL;
 
 		if (subexpr == NULL)
 			ereport(ERROR,
@@ -5144,26 +5327,39 @@ jsonb_subscript_validate(bool isAssignment, SubscriptingRef *sbsref,
 		subexprType = exprType(subexpr);
 		get_type_category_preferred(subexprType, &typcategory, &typispreferred);
 
-		if (typcategory != TYPCATEGORY_NUMERIC)
+		if (typcategory == TYPCATEGORY_NUMERIC)
 		{
-			subexpr = coerce_to_target_type(pstate,
-											subexpr, subexprType,
-											TEXTOID, -1,
-											COERCION_ASSIGNMENT,
-											COERCE_IMPLICIT_CAST,
-											-1);
+			Node	   *intexpr = coerce_to_target_type(pstate,
+														subexpr, subexprType,
+														INT4OID, -1,
+														COERCION_ASSIGNMENT,
+														COERCE_IMPLICIT_CAST,
+														-1);
 
-			if (subexpr == NULL)
-				ereport(ERROR,
-						(errcode(ERRCODE_DATATYPE_MISMATCH),
-						 errmsg("jsonb subscript must have text type"),
-						 parser_errposition(pstate, exprLocation(subexpr))));
+			addexprs = lappend(addexprs, intexpr);
 		}
+		else
+			addexprs = lappend(addexprs, NULL);
+
+		subexpr = coerce_to_target_type(pstate,
+										subexpr, subexprType,
+										TEXTOID, -1,
+										COERCION_ASSIGNMENT,
+										COERCE_IMPLICIT_CAST,
+										-1);
+
+		if (subexpr == NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("jsonb subscript must have text type"),
+					 parser_errposition(pstate, exprLocation(subexpr))));
 
 		upperIndexpr = lappend(upperIndexpr, subexpr);
+		upperAddExpr = lappend(upperAddExpr, addexprs);
 	}
 
 	sbsref->refupperindexpr = upperIndexpr;
+	sbsref->refupperaddexpr = upperAddExpr;
 
 	return sbsref;
 }

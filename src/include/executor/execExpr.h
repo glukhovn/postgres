@@ -185,6 +185,12 @@ typedef enum ExprEvalOp
 	 */
 	EEOP_FIELDSTORE_FORM,
 
+	/* Init subscripting */
+	EEOP_SBSREF_INIT,
+
+	/* Select an expression for container subscript evaluation */
+	EEOP_SBSREF_SELECTEXPR,
+
 	/* Process a container subscript; short-circuit expression to NULL if NULL */
 	EEOP_SBSREF_SUBSCRIPT,
 
@@ -492,17 +498,30 @@ typedef struct ExprEvalStep
 			int			ncolumns;
 		}			fieldstore;
 
-		/* for EEOP_SBSREF_SUBSCRIPT */
+		/* for EEOP_SBSREF_SELECTEXPR */
 		struct
 		{
 			/* too big to have inline */
 			struct SubscriptingRefState *state;
 			int			off;	/* 0-based index of this subscript */
 			bool		isupper;	/* is it upper or lower subscript? */
+			int			nexprs;		/* subscript expression count */
+			Oid		   *exprtypes;		/* type oids of subscript expressions */
+			int		   *jumpdones;		/* jumps to expressions */
+		}			sbsref_selectexpr;
+
+		/* for EEOP_SBSREF_SUBSCRIPT */
+		struct
+		{
+			/* too big to have inline */
+			struct SubscriptingRefState *state;
+			Oid			typid;	/* type oid of subscript */
+			int			off;	/* 0-based index of this subscript */
+			bool		isupper;	/* is it upper or lower subscript? */
 			int			jumpdone;	/* jump here on null */
 		}			sbsref_subscript;
 
-		/* for EEOP_SBSREF_OLD / ASSIGN / FETCH */
+		/* for EEOP_SBSREF_OLD / ASSIGN / FETCH / INIT */
 		struct
 		{
 			/* too big to have inline */
@@ -674,12 +693,14 @@ typedef struct SubscriptingRefState
 	int			numupper;
 	bool		upperprovided[MAX_SUBSCRIPT_DEPTH];
 	Oid			uppertypid[MAX_SUBSCRIPT_DEPTH];
+	void	   *upperprivate[MAX_SUBSCRIPT_DEPTH];
 	Datum		upperindex[MAX_SUBSCRIPT_DEPTH];
 
 	/* similarly for lower indexes, if any */
 	int			numlower;
 	bool		lowerprovided[MAX_SUBSCRIPT_DEPTH];
 	Oid			lowertypid[MAX_SUBSCRIPT_DEPTH];
+	void	   *lowerprivate[MAX_SUBSCRIPT_DEPTH];
 	Datum		lowerindex[MAX_SUBSCRIPT_DEPTH];
 
 	/* subscript expressions get evaluated into here */
@@ -696,6 +717,7 @@ typedef struct SubscriptingRefState
 
 	bool		resnull;
 	struct SubscriptRoutines *sbsroutines;
+	void	   *privatedata;
 } SubscriptingRefState;
 
 
@@ -740,6 +762,8 @@ extern void ExecEvalFieldStoreDeForm(ExprState *state, ExprEvalStep *op,
 						 ExprContext *econtext);
 extern void ExecEvalFieldStoreForm(ExprState *state, ExprEvalStep *op,
 					   ExprContext *econtext);
+extern void ExecEvalSubscriptingRefInit(ExprState *state, ExprEvalStep *op);
+extern int ExecEvalSubscriptingRefSelect(ExprState *state, ExprEvalStep *op);
 extern bool ExecEvalSubscriptingRef(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalSubscriptingRefFetch(ExprState *state, ExprEvalStep *op);
 extern void ExecEvalSubscriptingRefOld(ExprState *state, ExprEvalStep *op);

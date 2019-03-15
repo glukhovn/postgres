@@ -29,13 +29,25 @@ typedef Datum (*SubscriptingFetch) (Datum source, struct SubscriptingRefState *s
 
 typedef Datum (*SubscriptingAssign) (Datum source, struct SubscriptingRefState *sbrsefstate);
 
+typedef void (*SubscriptingInit) (struct SubscriptingRefState *sbrefstate,
+								  Datum source, bool isnull);
+
+typedef int (*SubscriptingSelectExpr) (struct SubscriptingRefState *sbsreftate,
+									   Oid subscriptType,
+									   Oid *subscriptExprTypes, int nexprs);
+
+typedef bool (*SubscriptingStep) (struct SubscriptingRefState *sbrefstate,
+								  int subscriptNum, bool isupper);
+
 typedef struct SubscriptRoutines
 {
 	SubscriptingPrepare		prepare;
 	SubscriptingValidate	validate;
 	SubscriptingFetch		fetch;
 	SubscriptingAssign		assign;
-
+	SubscriptingInit		init;
+	SubscriptingStep		step;
+	SubscriptingSelectExpr	selectexpr;
 } SubscriptRoutines;
 
 
