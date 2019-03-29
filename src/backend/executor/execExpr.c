@@ -2542,13 +2542,16 @@ ExecInitSubscriptExpr(ExprEvalStep *scratch, SubscriptingRefState *sbsrefstate,
 
 static void
 ExecInitSubscript(ExprEvalStep *scratch, SubscriptingRefState *sbsrefstate,
-				  ExprState *state, Expr *expr, List *exprs, int i,
-				  bool isupper, List **adjust_jumps)
+				  ExprState *state, List *exprs, int i, bool isupper,
+				  List **adjust_jumps)
 {
+	Expr	   *expr = (Expr *) linitial(exprs);
 	int			nexprs = 0;
 	int			select_step;
 
-	if (exprs)
+	if (list_length(exprs) <= 1)
+		exprs = NIL;
+	else
 	{
 		ListCell   *lc;
 
@@ -2556,13 +2559,16 @@ ExecInitSubscript(ExprEvalStep *scratch, SubscriptingRefState *sbsrefstate,
 		foreach(lc, exprs)
 		{
 			if (lfirst(lc))
-				nexprs ++;
+				nexprs++;
 		}
 
-		if (nexprs)
-			nexprs = list_length(exprs);
+		if (nexprs > 1)
+			nexprs = list_length(exprs) - 1;
 		else
+		{
 			exprs = NIL;
+			nexprs = 0;
+		}
 	}
 
 	if (exprs)
@@ -2583,11 +2589,12 @@ ExecInitSubscript(ExprEvalStep *scratch, SubscriptingRefState *sbsrefstate,
 
 	if (exprs)
 	{
-		ListCell   *lc;
+		ListCell   *lc = list_head(exprs);
 		List	   *adjust_subexpr_jumps = NIL;
 		int			j = 0;
 
-		foreach(lc, exprs)
+		/* skip first expression */
+		for (lc = lnext(lc); lc; lc = lnext(lc))
 		{
 			int			jumpdone;
 			Oid			exprtype;
@@ -2644,9 +2651,7 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 	List	   *adjust_jumps = NIL;
 	ListCell   *lc;
 	ListCell   *ulc;
-	ListCell   *eulc;
 	ListCell   *llc;
-	ListCell   *ellc;
 	int			i;
 	RegProcedure typsubshandler = get_typsubsprocs(sbsref->refcontainertype);
 	bool		isAssignment = (sbsref->refassgnexpr != NULL);
@@ -2689,56 +2694,65 @@ ExecInitSubscriptingRef(ExprEvalStep *scratch, SubscriptingRef *sbsref,
 	/* Evaluate upper and lower subscripts */
 	i = 0;
 	llc = list_head(sbsref->reflowerindexpr);
-	eulc = list_head(sbsref->refupperaddexpr);
-	ellc = list_head(sbsref->refloweraddexpr);
 
 	sbsrefstate->numlower = 0;
 
 	foreach(ulc, sbsref->refupperindexpr)
 	{
-		Expr	   *uexpr = (Expr *) lfirst(ulc);
+		Node	   *uexpr = (Node *) lfirst(ulc);
 
 		/* When slicing, individual subscript bounds can be omitted */
 		if (!uexpr)
 			sbsrefstate->upperprovided[i] = false;
 		else
 		{
-			List	   *uexprs = eulc ? lfirst_node(List, eulc) : NIL;
+			List	   *uexprs;
+
+			if (IsA(uexpr, List))
+			{
+				uexprs = (List *) uexpr;
+				uexpr = linitial((List *) uexprs);
+			}
+			else
+				uexprs = list_make1(uexpr);
 
 			sbsrefstate->upperprovided[i] = true;
-			sbsrefstate->uppertypid[i] = exprType((Node *) uexpr);
+			sbsrefstate->uppertypid[i] = exprType(uexpr);
 
-			ExecInitSubscript(scratch, sbsrefstate, state, uexpr, uexprs, i,
-							  true, &adjust_jumps);
+			ExecInitSubscript(scratch, sbsrefstate, state, uexprs, i, true,
+							  &adjust_jumps);
 		}
 
 		if (llc)
 		{
-			Expr	   *lexpr = (Expr *) lfirst(llc);
+			Node	   *lexpr = (Node *) lfirst(llc);
 
 			/* When slicing, individual subscript bounds can be omitted */
 			if (!lexpr)
 				sbsrefstate->lowerprovided[i] = false;
 			else
 			{
-				List	   *lexprs = ellc ? lfirst_node(List, ellc) : NIL;
+				List	   *lexprs;
+
+				if (IsA(lexpr, List))
+				{
+					lexprs = (List *) lexpr;
+					lexpr = linitial((List *) lexprs);
+				}
+				else
+					lexprs = list_make1(lexpr);
 
 				sbsrefstate->lowerprovided[i] = true;
-				sbsrefstate->lowertypid[i] = exprType((Node *) lexpr);
+				sbsrefstate->lowertypid[i] = exprType(lexpr);
 
-				ExecInitSubscript(scratch, sbsrefstate, state, lexpr, lexprs,
-								  i, false, &adjust_jumps);
+				ExecInitSubscript(scratch, sbsrefstate, state, lexprs, i,
+								  false, &adjust_jumps);
 			}
 
 			llc = lnext(llc);
-			if (ellc)
-				eulc = lnext(ellc);
 
 			sbsrefstate->numlower++;
 		}
-
-		if (eulc)
-			eulc = lnext(eulc);
 
 		i++;
 	}

@@ -5299,7 +5299,6 @@ jsonb_subscript_validate(bool isAssignment, SubscriptingRef *sbsref,
 						 ParseState *pstate)
 {
 	List	   *upperIndexpr = NIL;
-	List	   *upperAddExpr = NIL;
 	ListCell   *l;
 
 	if (sbsref->reflowerindexpr != NIL)
@@ -5311,11 +5310,12 @@ jsonb_subscript_validate(bool isAssignment, SubscriptingRef *sbsref,
 
 	foreach(l, sbsref->refupperindexpr)
 	{
-		Node *subexpr = (Node *) lfirst(l);
+		Node	   *subexpr = (Node *) lfirst(l);
+		Node	   *textexpr;
+		Node	   *intexpr;
 		Oid			subexprType;
 		char		typcategory;
 		bool		typispreferred;
-		List	   *addexprs = NIL;
 
 		if (subexpr == NULL)
 			ereport(ERROR,
@@ -5325,41 +5325,38 @@ jsonb_subscript_validate(bool isAssignment, SubscriptingRef *sbsref,
 						((Node *) lfirst(sbsref->refupperindexpr->head))))));
 
 		subexprType = exprType(subexpr);
-		get_type_category_preferred(subexprType, &typcategory, &typispreferred);
 
-		if (typcategory == TYPCATEGORY_NUMERIC)
-		{
-			Node	   *intexpr = coerce_to_target_type(pstate,
-														subexpr, subexprType,
-														INT4OID, -1,
-														COERCION_ASSIGNMENT,
-														COERCE_IMPLICIT_CAST,
-														-1);
+		textexpr = coerce_to_target_type(pstate,
+										 subexpr, subexprType,
+										 TEXTOID, -1,
+										 COERCION_ASSIGNMENT,
+										 COERCE_IMPLICIT_CAST,
+										 -1);
 
-			addexprs = lappend(addexprs, intexpr);
-		}
-		else
-			addexprs = lappend(addexprs, NULL);
-
-		subexpr = coerce_to_target_type(pstate,
-										subexpr, subexprType,
-										TEXTOID, -1,
-										COERCION_ASSIGNMENT,
-										COERCE_IMPLICIT_CAST,
-										-1);
-
-		if (subexpr == NULL)
+		if (textexpr == NULL)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
 					 errmsg("jsonb subscript must have text type"),
 					 parser_errposition(pstate, exprLocation(subexpr))));
 
+		get_type_category_preferred(subexprType, &typcategory, &typispreferred);
+
+		if (typcategory == TYPCATEGORY_NUMERIC)
+			intexpr = coerce_to_target_type(pstate,
+											subexpr, subexprType,
+											INT4OID, -1,
+											COERCION_ASSIGNMENT,
+											COERCE_IMPLICIT_CAST,
+											-1);
+		else
+			intexpr = NULL;
+
+		subexpr = intexpr ? (Node *) list_make2(textexpr, intexpr) : textexpr;
+
 		upperIndexpr = lappend(upperIndexpr, subexpr);
-		upperAddExpr = lappend(upperAddExpr, addexprs);
 	}
 
 	sbsref->refupperindexpr = upperIndexpr;
-	sbsref->refupperaddexpr = upperAddExpr;
 
 	return sbsref;
 }
