@@ -409,11 +409,9 @@ typedef struct SubscriptingRef
 	Oid			refnestedfunc;		/* OID of type-specific function to handle nested assignment */
 	List	   *refupperindexpr;	/* expressions that evaluate to upper
 									 * container indexes */
-	List	   *refupperaddexpr;	/* additional upper index expressions */
 	List	   *reflowerindexpr;	/* expressions that evaluate to lower
 									 * container indexes, or NIL for single
 									 * container element */
-	List	   *refloweraddexpr;	/* additional lower index expressions */
 	List       *refindexprslice;    /* whether or not related indexpr from
 									 * reflowerindexpr is a slice */
 	Expr	   *refexpr;		/* the expression that evaluates to a
